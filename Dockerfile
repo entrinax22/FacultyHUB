@@ -1,8 +1,9 @@
 # ── Stage 1: Build frontend assets ───────────────────────────────────────────
-FROM node:22-alpine AS frontend
+# Use Debian (glibc) for Vite/Rollup native bindings compatibility.
+FROM node:22-slim AS frontend
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 COPY . .
 RUN npm run build
 
