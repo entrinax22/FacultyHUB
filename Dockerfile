@@ -23,6 +23,10 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 COPY package*.json ./
 RUN npm ci
 COPY . .
+
+# Setup Laravel environment for build-time artisan commands
+RUN cp .env.example .env || echo "APP_KEY=" > .env
+RUN php artisan key:generate --force || true
 RUN npm run build
 
 # ── Stage 2: PHP + Nginx production image ────────────────────────────────────
