@@ -1,7 +1,11 @@
 # ── Stage 1: Build frontend assets ───────────────────────────────────────────
 # Use Debian (glibc) for Vite/Rollup native bindings compatibility.
-FROM node:22-slim AS frontend
+# Use Node LTS for best native-module support on Render.
+FROM node:20-slim AS frontend
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm ci
 COPY . .
