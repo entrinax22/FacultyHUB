@@ -5,6 +5,9 @@ services:
     runtime: docker
     plan: free
     healthCheckPath: /up
+    healthCheckInterval: 30
+    healthCheckTimeout: 5
+    healthCheckStartupFailureThreshold: 30
     envVars:
       - key: APP_NAME
         value: FacultyHUB

@@ -7,5 +7,5 @@ php artisan migrate --force
 echo "==> Caching config, routes, views..."
 php artisan optimize
 
-echo "==> Starting services..."
+echo "==> Waiting for PHP-FPM and Nginx to be ready..."
 exec /usr/bin/supervisord -c /etc/supervisord.conf
