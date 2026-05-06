@@ -1,12 +1,25 @@
 # ── Stage 1: Build frontend assets ───────────────────────────────────────────
-# Use Debian (glibc) for Vite/Rollup native bindings compatibility.
-# Use Node LTS for best native-module support on Render.
-FROM node:20-slim AS frontend
+# Use PHP 8.3 + Node so `@laravel/vite-plugin-wayfinder` can run `php artisan wayfinder:generate` at build time.
+FROM php:8.3-cli-bookworm AS frontend
 WORKDIR /app
+
+# System deps + Node.js (for Vite build)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
+    && apt-get install -y --no-install-recommends curl ca-certificates git unzip xz-utils \
+    && curl -fsSL https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.xz -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm -f /tmp/node.tar.xz \
+    && corepack enable \
     && rm -rf /var/lib/apt/lists/*
 
+# Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# PHP deps (so artisan commands can run during build)
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
+# Node deps + build
 COPY package*.json ./
 RUN npm ci
 COPY . .

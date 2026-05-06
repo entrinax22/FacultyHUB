@@ -27,12 +27,8 @@ export default defineConfig({
                 },
             },
         }),
-        ...(process.env.NODE_ENV === 'production'
-            ? []
-            : [
-                  wayfinder({
-                      formVariants: true,
-                  }),
-              ]),
+        wayfinder({
+            formVariants: true,
+        }),
     ],
 });
