@@ -25,8 +25,11 @@ RUN npm ci
 COPY . .
 
 # Setup Laravel environment for build-time artisan commands
+RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
 RUN cp .env.example .env || echo "APP_KEY=" > .env
 RUN php artisan key:generate --force || true
+RUN php artisan config:cache --quiet 2>/dev/null || true
+RUN php artisan route:cache --quiet 2>/dev/null || true
 RUN npm run build
 
 # ── Stage 2: PHP + Nginx production image ────────────────────────────────────
