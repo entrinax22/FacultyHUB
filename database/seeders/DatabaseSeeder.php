@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'admin@lms.test'],
             [
                 'name' => 'Admin User',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Markx824312'),
                 'role' => 'admin',
                 'email_verified_at' => now(),
             ]
@@ -27,7 +27,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'faculty@lms.test'],
             [
                 'name' => 'Faculty User',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Markx824312'),
                 'role' => 'faculty',
                 'email_verified_at' => now(),
             ]
@@ -38,7 +38,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'student@lms.test'],
             [
                 'name' => 'Juan Dela Cruz',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Markx824312'),
                 'role' => 'student',
                 'email_verified_at' => now(),
             ]

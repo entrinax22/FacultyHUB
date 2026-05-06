@@ -37,14 +37,14 @@ defineProps<{
     </div>
 
     <!-- Dev credentials panel -->
-    <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950">
+    <!-- <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950">
         <p class="mb-1.5 font-semibold text-blue-700 dark:text-blue-300">Test Accounts (password: <code>password</code>)</p>
         <div class="space-y-0.5 text-blue-600 dark:text-blue-400">
             <p>Admin: <code>admin@lms.test</code></p>
             <p>Faculty: <code>faculty@lms.test</code></p>
             <p>Student: <code>student@lms.test</code></p>
         </div>
-    </div>
+    </div> -->
 
     <Form
         v-bind="store.form()"

@@ -1,152 +1,152 @@
 services:
-  # ── Web Application ──────────────────────────────────────────────────────────
-  - type: web
-    name: facultyhub-web
-    runtime: docker
-    plan: free
-    healthCheckPath: /up
-    healthCheckInterval: 30
-    healthCheckTimeout: 5
-    healthCheckStartupFailureThreshold: 30
-    envVars:
-      - key: APP_NAME
-        value: FacultyHUB
-      - key: APP_ENV
-        value: production
-      - key: APP_DEBUG
-        value: false
-      - key: APP_KEY
-        generateValue: true
-      - key: APP_URL
-        value: https://facultyhub-web.onrender.com   # change to your actual URL
+    # ── Web Application ──────────────────────────────────────────────────────────
+    - type: web
+      name: facultyhub-web
+      runtime: docker
+      plan: free
+      healthCheckPath: /up
+      healthCheckInterval: 30
+      healthCheckTimeout: 5
+      healthCheckStartupFailureThreshold: 30
+      envVars:
+          - key: APP_NAME
+            value: FacultyHUB
+          - key: APP_ENV
+            value: production
+          - key: APP_DEBUG
+            value: false
+          - key: APP_KEY
+            generateValue: true
+          - key: APP_URL
+            value: https://facultyhub-web.onrender.com # change to your actual URL
 
-      # Database — use the Render PostgreSQL values below
-      - key: DB_CONNECTION
-        value: pgsql
-      - key: DB_HOST
-        fromDatabase:
-          name: facultyhub-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: facultyhub-db
-          property: port
-      - key: DB_DATABASE
-        fromDatabase:
-          name: facultyhub-db
-          property: database
-      - key: DB_USERNAME
-        fromDatabase:
-          name: facultyhub-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: facultyhub-db
-          property: password
+          # Database — use the Render PostgreSQL values below
+          - key: DB_CONNECTION
+            value: pgsql
+          - key: DB_HOST
+            fromDatabase:
+                name: facultyhub-db
+                property: host
+          - key: DB_PORT
+            fromDatabase:
+                name: facultyhub-db
+                property: port
+          - key: DB_DATABASE
+            fromDatabase:
+                name: facultyhub-db
+                property: database
+          - key: DB_USERNAME
+            fromDatabase:
+                name: facultyhub-db
+                property: user
+          - key: DB_PASSWORD
+            fromDatabase:
+                name: facultyhub-db
+                property: password
 
-      # Session / Cache / Queue — all use database driver
-      - key: SESSION_DRIVER
-        value: database
-      - key: SESSION_ENCRYPT
-        value: true
-      - key: CACHE_STORE
-        value: database
-      - key: QUEUE_CONNECTION
-        value: database
+          # Session / Cache / Queue — all use database driver
+          - key: SESSION_DRIVER
+            value: database
+          - key: SESSION_ENCRYPT
+            value: true
+          - key: CACHE_STORE
+            value: database
+          - key: QUEUE_CONNECTION
+            value: database
 
-      # Storage — S3 / Cloudflare R2 (add keys in Render dashboard)
-      - key: FILESYSTEM_DISK
-        value: s3
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_DEFAULT_REGION
-        value: auto            # use "auto" for Cloudflare R2
-      - key: AWS_BUCKET
-        sync: false
-      - key: AWS_ENDPOINT
-        sync: false            # e.g. https://<account>.r2.cloudflarestorage.com
-      - key: AWS_USE_PATH_STYLE_ENDPOINT
-        value: true
-      - key: AWS_URL
-        sync: false            # public URL for files, e.g. https://pub.yourdomain.com
+          # Storage — S3 / Cloudflare R2 (add keys in Render dashboard)
+          - key: FILESYSTEM_DISK
+            value: s3
+          - key: AWS_ACCESS_KEY_ID
+            sync: false
+          - key: AWS_SECRET_ACCESS_KEY
+            sync: false
+          - key: AWS_DEFAULT_REGION
+            value: auto # use "auto" for Cloudflare R2
+          - key: AWS_BUCKET
+            sync: false
+          - key: AWS_ENDPOINT
+            sync: false # e.g. https://<account>.r2.cloudflarestorage.com
+          - key: AWS_USE_PATH_STYLE_ENDPOINT
+            value: true
+          - key: AWS_URL
+            sync: false # public URL for files, e.g. https://pub.yourdomain.com
 
-      # AI — Google Gemini
-      - key: GEMINI_API_KEY
-        sync: false
+          # AI — Google Gemini
+          - key: GEMINI_API_KEY
+            sync: false
 
-      # Mail (configure as needed)
-      - key: MAIL_MAILER
-        value: log
+          # Mail (configure as needed)
+          - key: MAIL_MAILER
+            value: log
 
-      - key: LOG_LEVEL
-        value: error
+          - key: LOG_LEVEL
+            value: error
 
-  # ── Queue Worker ─────────────────────────────────────────────────────────────
-  - type: worker
-    name: facultyhub-worker
-    runtime: docker
-    plan: free
-    dockerCommand: php artisan queue:work --tries=3 --timeout=120 --sleep=3 --max-jobs=500
-    envVars:
-      - key: APP_NAME
-        value: FacultyHUB
-      - key: APP_ENV
-        value: production
-      - key: APP_DEBUG
-        value: false
-      - key: APP_KEY
-        fromService:
-          name: facultyhub-web
-          type: web
-          envVarKey: APP_KEY
-      - key: DB_CONNECTION
-        value: pgsql
-      - key: DB_HOST
-        fromDatabase:
-          name: facultyhub-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: facultyhub-db
-          property: port
-      - key: DB_DATABASE
-        fromDatabase:
-          name: facultyhub-db
-          property: database
-      - key: DB_USERNAME
-        fromDatabase:
-          name: facultyhub-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: facultyhub-db
-          property: password
-      - key: QUEUE_CONNECTION
-        value: database
-      - key: FILESYSTEM_DISK
-        value: s3
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_DEFAULT_REGION
-        value: auto
-      - key: AWS_BUCKET
-        sync: false
-      - key: AWS_ENDPOINT
-        sync: false
-      - key: AWS_USE_PATH_STYLE_ENDPOINT
-        value: true
-      - key: AWS_URL
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
+    # ── Queue Worker ─────────────────────────────────────────────────────────────
+    - type: worker
+      name: facultyhub-worker
+      runtime: docker
+      plan: free
+      dockerCommand: php artisan queue:work --tries=3 --timeout=120 --sleep=3 --max-jobs=500
+      envVars:
+          - key: APP_NAME
+            value: FacultyHUB
+          - key: APP_ENV
+            value: production
+          - key: APP_DEBUG
+            value: false
+          - key: APP_KEY
+            fromService:
+                name: facultyhub-web
+                type: web
+                envVarKey: APP_KEY
+          - key: DB_CONNECTION
+            value: pgsql
+          - key: DB_HOST
+            fromDatabase:
+                name: facultyhub-db
+                property: host
+          - key: DB_PORT
+            fromDatabase:
+                name: facultyhub-db
+                property: port
+          - key: DB_DATABASE
+            fromDatabase:
+                name: facultyhub-db
+                property: database
+          - key: DB_USERNAME
+            fromDatabase:
+                name: facultyhub-db
+                property: user
+          - key: DB_PASSWORD
+            fromDatabase:
+                name: facultyhub-db
+                property: password
+          - key: QUEUE_CONNECTION
+            value: database
+          - key: FILESYSTEM_DISK
+            value: s3
+          - key: AWS_ACCESS_KEY_ID
+            sync: false
+          - key: AWS_SECRET_ACCESS_KEY
+            sync: false
+          - key: AWS_DEFAULT_REGION
+            value: auto
+          - key: AWS_BUCKET
+            sync: false
+          - key: AWS_ENDPOINT
+            sync: false
+          - key: AWS_USE_PATH_STYLE_ENDPOINT
+            value: true
+          - key: AWS_URL
+            sync: false
+          - key: GEMINI_API_KEY
+            sync: false
 
 # ── PostgreSQL Database ───────────────────────────────────────────────────────
 databases:
-  - name: facultyhub-db
-    plan: free
-    databaseName: facultyhub
-    user: facultyhub
+    - name: facultyhub-db
+      plan: free
+      databaseName: facultyhub
+      user: facultyhub
