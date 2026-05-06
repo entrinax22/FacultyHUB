@@ -4,8 +4,14 @@
 FROM node:20-slim AS frontend
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
+    && apt-get install -y --no-install-recommends python3 make g++ php-cli unzip git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Composer + PHP deps (needed for `php artisan wayfinder:generate` during Vite build)
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
 COPY package*.json ./
 RUN npm ci
 COPY . .
