@@ -6,7 +6,7 @@ WORKDIR /app
 # System deps + Node.js (for Vite build)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates git unzip xz-utils \
-    && curl -fsSL https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.xz -o /tmp/node.tar.xz \
+    && curl -fsSL https://nodejs.org/dist/v20.19.0/node-v20.19.0-linux-x64.tar.xz -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm -f /tmp/node.tar.xz \
     && corepack enable \
