@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class ModuleFile extends Model
 {
@@ -18,7 +17,7 @@ class ModuleFile extends Model
 
     public function getUrlAttribute(): string
     {
-        return Storage::disk()->url($this->file_path);
+        return route('module-files.view', $this->id);
     }
 
     public function getSizeFormattedAttribute(): string

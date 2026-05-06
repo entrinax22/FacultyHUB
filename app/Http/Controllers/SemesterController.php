@@ -35,7 +35,7 @@ class SemesterController extends Controller
 
         Semester::create($validated);
 
-        return redirect()->route('semesters.index')->with('success', 'Semester created successfully.');
+        return redirect()->route('admin.semesters.index')->with('success', 'Semester created successfully.');
     }
 
     public function edit(Semester $semester): Response
@@ -56,14 +56,14 @@ class SemesterController extends Controller
 
         $semester->update($validated);
 
-        return redirect()->route('semesters.index')->with('success', 'Semester updated successfully.');
+        return redirect()->route('admin.semesters.index')->with('success', 'Semester updated successfully.');
     }
 
     public function destroy(Semester $semester): RedirectResponse
     {
         $semester->delete();
 
-        return redirect()->route('semesters.index')->with('success', 'Semester deleted.');
+        return redirect()->route('admin.semesters.index')->with('success', 'Semester deleted.');
     }
 
     public function setActive(Semester $semester): RedirectResponse
@@ -71,6 +71,6 @@ class SemesterController extends Controller
         Semester::where('is_active', true)->update(['is_active' => false]);
         $semester->update(['is_active' => true]);
 
-        return redirect()->route('semesters.index')->with('success', "{$semester->name} is now the active semester.");
+        return redirect()->route('admin.semesters.index')->with('success', "{$semester->name} is now the active semester.");
     }
 }

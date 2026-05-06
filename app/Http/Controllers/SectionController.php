@@ -12,15 +12,16 @@ use Inertia\Response;
 
 class SectionController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $sections = Section::with(['semester', 'subject', 'faculty'])
-            ->withCount('enrollments')
-            ->latest()
-            ->get();
+        $query = Section::with(['semester', 'subject', 'faculty'])->withCount('enrollments');
+
+        if ($request->user()->isFaculty()) {
+            $query->where('faculty_id', $request->user()->id);
+        }
 
         return Inertia::render('sections/Index', [
-            'sections' => $sections,
+            'sections' => $query->latest()->get(),
         ]);
     }
 
@@ -49,8 +50,9 @@ class SectionController extends Controller
         return redirect()->route('sections.index')->with('success', 'Section created successfully.');
     }
 
-    public function show(Section $section): Response
+    public function show(Request $request, Section $section): Response
     {
+        $this->authorizeSection($section, $request);
         $section->load(['semester', 'subject', 'faculty']);
         $enrollments = $section->enrollments()->with('student')->get();
 
@@ -60,8 +62,10 @@ class SectionController extends Controller
         ]);
     }
 
-    public function edit(Section $section): Response
+    public function edit(Request $request, Section $section): Response
     {
+        $this->authorizeSection($section, $request);
+
         return Inertia::render('sections/Form', [
             'section' => $section,
             'semesters' => Semester::orderByDesc('is_active')->latest()->get(),
@@ -71,6 +75,8 @@ class SectionController extends Controller
 
     public function update(Request $request, Section $section): RedirectResponse
     {
+        $this->authorizeSection($section, $request);
+
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'semester_id' => 'required|exists:semesters,id',
@@ -84,10 +90,18 @@ class SectionController extends Controller
         return redirect()->route('sections.index')->with('success', 'Section updated successfully.');
     }
 
-    public function destroy(Section $section): RedirectResponse
+    public function destroy(Request $request, Section $section): RedirectResponse
     {
+        $this->authorizeSection($section, $request);
         $section->delete();
 
         return redirect()->route('sections.index')->with('success', 'Section deleted.');
+    }
+
+    private function authorizeSection(Section $section, Request $request): void
+    {
+        if ($request->user()->isFaculty() && $section->faculty_id !== $request->user()->id) {
+            abort(403, 'You do not own this section.');
+        }
     }
 }

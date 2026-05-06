@@ -27,14 +27,11 @@ Route::inertia('/', 'Welcome', [
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::get('module-files/{moduleFile}/view', [ModuleController::class, 'serveFile'])->name('module-files.view');
 });
 
 // ─── Faculty & Admin ─────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function () {
-
-    // Semesters
-    Route::resource('semesters', SemesterController::class);
-    Route::post('semesters/{semester}/set-active', [SemesterController::class, 'setActive'])->name('semesters.set-active');
 
     // Subjects
     Route::resource('subjects', SubjectController::class);
@@ -43,6 +40,7 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
     Route::resource('sections', SectionController::class);
     Route::get('sections/{section}/students/search', [StudentController::class, 'search'])->name('sections.students.search');
     Route::post('sections/{section}/enroll', [StudentController::class, 'enroll'])->name('sections.enroll');
+    Route::post('sections/{section}/bulk-enroll', [StudentController::class, 'bulkEnroll'])->name('sections.bulk-enroll');
 
     // Modules
     Route::get('sections/{section}/modules', [ModuleController::class, 'index'])->name('sections.modules.index');
@@ -119,6 +117,8 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
 // ─── Student ──────────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
     Route::get('my-sections', [StudentModuleController::class, 'dashboard'])->name('student.dashboard');
+    Route::get('my-sections/browse', [StudentModuleController::class, 'browseSections'])->name('student.browse');
+    Route::post('my-sections/{section}/self-enroll', [StudentModuleController::class, 'selfEnroll'])->name('student.self-enroll');
     Route::get('my-sections/{section}', [StudentModuleController::class, 'sectionModules'])->name('student.section');
     Route::get('my-sections/{section}/modules/{module}', [StudentModuleController::class, 'viewModule'])->name('student.module');
     Route::post('modules/{module}/mark-read', [StudentModuleController::class, 'markRead'])->name('modules.mark-read');
@@ -136,6 +136,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('users', [AdminController::class, 'users'])->name('users');
     Route::put('users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
     Route::get('reports', [AdminController::class, 'reports'])->name('reports');
+
+    // Semesters — admin only
+    Route::resource('semesters', SemesterController::class);
+    Route::post('semesters/{semester}/set-active', [SemesterController::class, 'setActive'])->name('semesters.set-active');
 });
 
 require __DIR__.'/settings.php';

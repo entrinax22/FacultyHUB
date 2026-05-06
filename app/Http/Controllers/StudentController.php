@@ -132,6 +132,57 @@ class StudentController extends Controller
         return back()->with('success', "{$student->first_name} {$student->last_name} enrolled successfully.");
     }
 
+    public function bulkEnroll(Request $request, Section $section): RedirectResponse
+    {
+        $validated = $request->validate([
+            'student_nos' => 'required|string',
+        ]);
+
+        $lines = preg_split('/[\r\n,;]+/', $validated['student_nos']);
+        $lines = array_filter(array_map('trim', $lines));
+
+        $enrolled = 0;
+        $skipped = [];
+        $notFound = [];
+
+        foreach ($lines as $no) {
+            $student = Student::where('student_no', $no)->first();
+
+            if (! $student) {
+                $notFound[] = $no;
+                continue;
+            }
+
+            $alreadyIn = Enrollment::where('student_id', $student->id)
+                ->where('section_id', $section->id)
+                ->exists();
+
+            if ($alreadyIn) {
+                $skipped[] = $no;
+                continue;
+            }
+
+            Enrollment::create([
+                'student_id' => $student->id,
+                'section_id' => $section->id,
+                'semester_id' => $section->semester_id,
+                'status' => 'active',
+            ]);
+
+            $enrolled++;
+        }
+
+        $msg = "{$enrolled} student(s) enrolled.";
+        if ($skipped) {
+            $msg .= ' Already enrolled: '.implode(', ', $skipped).'.';
+        }
+        if ($notFound) {
+            $msg .= ' Not found: '.implode(', ', $notFound).'.';
+        }
+
+        return back()->with('success', $msg);
+    }
+
     public function unenroll(Enrollment $enrollment): RedirectResponse
     {
         $sectionId = $enrollment->section_id;

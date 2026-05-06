@@ -20,7 +20,7 @@ defineOptions({
     layout: {
         breadcrumbs: [
             { title: 'Dashboard', href: '/dashboard' },
-            { title: 'Semesters', href: '/semesters' },
+            { title: 'Semesters', href: '/admin/semesters' },
         ],
     },
 });
@@ -34,9 +34,9 @@ const form = useForm({
 
 function submit() {
     if (props.semester) {
-        form.put(`/semesters/${props.semester.id}`);
+        form.put(`/admin/semesters/${props.semester.id}`);
     } else {
-        form.post('/semesters');
+        form.post('/admin/semesters');
     }
 }
 </script>
@@ -88,7 +88,7 @@ function submit() {
                     {{ semester ? 'Update Semester' : 'Create Semester' }}
                 </Button>
                 <Button variant="outline" as-child>
-                    <Link href="/semesters">Cancel</Link>
+                    <Link href="/admin/semesters">Cancel</Link>
                 </Button>
             </div>
         </form>

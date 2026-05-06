@@ -20,18 +20,18 @@ defineOptions({
     layout: {
         breadcrumbs: [
             { title: 'Dashboard', href: '/dashboard' },
-            { title: 'Semesters', href: '/semesters' },
+            { title: 'Semesters', href: '/admin/semesters' },
         ],
     },
 });
 
 function setActive(id: number) {
-    router.post(`/semesters/${id}/set-active`);
+    router.post(`/admin/semesters/${id}/set-active`);
 }
 
 function deleteSemester(id: number) {
     if (confirm('Delete this semester? This cannot be undone.')) {
-        router.delete(`/semesters/${id}`);
+        router.delete(`/admin/semesters/${id}`);
     }
 }
 </script>
@@ -46,7 +46,7 @@ function deleteSemester(id: number) {
                 <p class="text-sm text-muted-foreground">Manage academic semesters</p>
             </div>
             <Button as-child>
-                <Link href="/semesters/create">
+                <Link href="/admin/semesters/create">
                     <Plus class="mr-2 h-4 w-4" />
                     New Semester
                 </Link>
@@ -83,7 +83,7 @@ function deleteSemester(id: number) {
                             Set Active
                         </Button>
                         <Button variant="outline" size="sm" as-child>
-                            <Link :href="`/semesters/${semester.id}/edit`">
+                            <Link :href="`/admin/semesters/${semester.id}/edit`">
                                 <Pencil class="h-3.5 w-3.5" />
                             </Link>
                         </Button>

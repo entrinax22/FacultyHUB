@@ -52,6 +52,14 @@ defineOptions({
 type SearchResult = { id: number; student_no: string; first_name: string; last_name: string; course: string; year_level: number };
 
 const enrollForm = useForm({ student_no: '' });
+const bulkForm = useForm({ student_nos: '' });
+const enrollTab = ref<'single' | 'bulk'>('single');
+
+function submitBulk() {
+    bulkForm.post(`/sections/${props.section.id}/bulk-enroll`, {
+        onSuccess: () => { bulkForm.reset(); },
+    });
+}
 const searchQuery = ref('');
 const searchResults = ref<SearchResult[]>([]);
 const selectedStudent = ref<SearchResult | null>(null);
@@ -189,9 +197,26 @@ function unenroll(enrollmentId: number, studentName: string) {
 
         <!-- Enroll Student -->
         <div class="rounded-xl border p-4 space-y-3">
-            <h2 class="font-semibold">Enroll a Student</h2>
-            <div class="flex gap-3">
-                <!-- Search input with dropdown -->
+            <div class="flex items-center justify-between">
+                <h2 class="font-semibold">Enroll Students</h2>
+                <div class="flex rounded-lg border overflow-hidden text-sm">
+                    <button
+                        type="button"
+                        class="px-3 py-1.5 transition-colors"
+                        :class="enrollTab === 'single' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/50'"
+                        @click="enrollTab = 'single'"
+                    >Single</button>
+                    <button
+                        type="button"
+                        class="px-3 py-1.5 transition-colors"
+                        :class="enrollTab === 'bulk' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/50'"
+                        @click="enrollTab = 'bulk'"
+                    >Bulk</button>
+                </div>
+            </div>
+
+            <!-- Single enroll -->
+            <div v-if="enrollTab === 'single'" class="flex gap-3">
                 <div class="relative flex-1">
                     <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                     <Input
@@ -203,11 +228,7 @@ function unenroll(enrollmentId: number, studentName: string) {
                         @blur="onSearchBlur"
                         @focus="onSearchFocus"
                     />
-                    <!-- Dropdown results -->
-                    <div
-                        v-if="showDropdown && searchResults.length"
-                        class="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border bg-popover shadow-lg"
-                    >
+                    <div v-if="showDropdown && searchResults.length" class="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border bg-popover shadow-lg">
                         <button
                             v-for="s in searchResults"
                             :key="s.id"
@@ -220,32 +241,38 @@ function unenroll(enrollmentId: number, studentName: string) {
                             <span class="ml-auto text-xs text-muted-foreground shrink-0">{{ s.course }} · Year {{ s.year_level }}</span>
                         </button>
                     </div>
-                    <div
-                        v-if="showDropdown && searchResults.length === 0 && searchQuery.length >= 1"
-                        class="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border bg-popover px-4 py-3 text-sm text-muted-foreground shadow-lg"
-                    >
-                        No matching students found (or all are already enrolled).
+                    <div v-if="showDropdown && searchResults.length === 0 && searchQuery.length >= 1" class="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border bg-popover px-4 py-3 text-sm text-muted-foreground shadow-lg">
+                        No matching students found.
                     </div>
                     <InputError :message="enrollForm.errors.student_no" class="mt-1" />
                 </div>
-
-                <!-- Selected student confirm chip -->
                 <div v-if="selectedStudent" class="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 text-sm shrink-0">
                     <span class="font-medium">{{ selectedStudent.last_name }}, {{ selectedStudent.first_name }}</span>
                     <button type="button" class="text-muted-foreground hover:text-foreground" @click="clearSelection">✕</button>
                 </div>
-
-                <Button
-                    :disabled="!selectedStudent || enrollForm.processing"
-                    @click="enrollStudent"
-                >
+                <Button :disabled="!selectedStudent || enrollForm.processing" @click="enrollStudent">
                     <Plus class="mr-2 h-4 w-4" />
                     Enroll
                 </Button>
             </div>
-            <p class="text-xs text-muted-foreground">
-                Type the student number (e.g. 2024-00001) or full name. Select from the dropdown, then click Enroll.
-            </p>
+
+            <!-- Bulk enroll -->
+            <div v-else class="space-y-3">
+                <textarea
+                    v-model="bulkForm.student_nos"
+                    rows="5"
+                    placeholder="Paste student IDs, one per line (e.g.):&#10;2020-00001&#10;2020-00002&#10;2020-00003"
+                    class="flex min-h-[110px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
+                />
+                <div class="flex items-center gap-3">
+                    <Button :disabled="!bulkForm.student_nos.trim() || bulkForm.processing" @click="submitBulk">
+                        <Plus class="mr-2 h-4 w-4" />
+                        Enroll All
+                    </Button>
+                    <p class="text-xs text-muted-foreground">Separate IDs by new lines, commas, or semicolons.</p>
+                </div>
+                <InputError :message="bulkForm.errors.student_nos" />
+            </div>
         </div>
 
         <!-- Student List -->

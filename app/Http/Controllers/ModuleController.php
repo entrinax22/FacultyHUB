@@ -7,9 +7,11 @@ use App\Models\ModuleFile;
 use App\Models\Section;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ModuleController extends Controller
 {
@@ -31,6 +33,11 @@ class ModuleController extends Controller
         return Inertia::render('modules/Form', [
             'section' => $section,
         ]);
+    }
+
+    private function fileDisk(): string
+    {
+        return config('filesystems.default') === 's3' ? 's3' : 'public';
     }
 
     public function store(Request $request, Section $section): RedirectResponse
@@ -56,7 +63,7 @@ class ModuleController extends Controller
 
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $path = $file->store("modules/{$module->id}");
+                $path = $file->store("modules/{$module->id}", $this->fileDisk());
                 $module->files()->create([
                     'file_name' => $file->getClientOriginalName(),
                     'file_path' => $path,
@@ -110,7 +117,7 @@ class ModuleController extends Controller
 
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $path = $file->store("modules/{$module->id}");
+                $path = $file->store("modules/{$module->id}", $this->fileDisk());
                 $module->files()->create([
                     'file_name' => $file->getClientOriginalName(),
                     'file_path' => $path,
@@ -130,7 +137,7 @@ class ModuleController extends Controller
         $sectionId = $module->section_id;
 
         foreach ($module->files as $file) {
-            Storage::delete($file->file_path);
+            Storage::disk($this->fileDisk())->delete($file->file_path);
         }
 
         $module->delete();
@@ -151,7 +158,7 @@ class ModuleController extends Controller
 
     public function destroyFile(ModuleFile $moduleFile): RedirectResponse
     {
-        Storage::disk('public')->delete($moduleFile->file_path);
+        Storage::disk($this->fileDisk())->delete($moduleFile->file_path);
         $sectionId = $moduleFile->module->section_id;
         $moduleId = $moduleFile->module_id;
         $moduleFile->delete();
@@ -159,6 +166,52 @@ class ModuleController extends Controller
         return redirect()
             ->route('modules.edit', $moduleId)
             ->with('success', 'File removed.');
+    }
+
+    public function serveFile(Request $request, ModuleFile $moduleFile): StreamedResponse|RedirectResponse
+    {
+        $module = $moduleFile->module;
+        $user   = $request->user();
+
+        // Students: must be enrolled and module must be published
+        if ($user->isStudent()) {
+            $student  = $user->student;
+            $enrolled = $student?->enrollments()
+                ->where('section_id', $module->section_id)
+                ->where('status', 'active')
+                ->exists();
+
+            if (! $enrolled || ! $module->is_published) {
+                abort(403);
+            }
+        }
+
+        $disk = $this->fileDisk();
+
+        // S3 / R2: redirect to a short-lived signed URL
+        if ($disk === 's3') {
+            /** @var \Illuminate\Filesystem\FilesystemAdapter $s3 */
+            $s3 = Storage::disk('s3');
+            return redirect($s3->temporaryUrl($moduleFile->file_path, now()->addMinutes(30)));
+        }
+
+        // Local public disk: stream with inline disposition so browser previews it
+        $absolutePath = Storage::disk('public')->path($moduleFile->file_path);
+
+        if (! file_exists($absolutePath)) {
+            abort(404);
+        }
+
+        $mime     = $moduleFile->file_type ?: mime_content_type($absolutePath) ?: 'application/octet-stream';
+        $filename = $moduleFile->file_name;
+
+        return response()->streamDownload(function () use ($absolutePath) {
+            readfile($absolutePath);
+        }, $filename, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
+            'Cache-Control'       => 'private, max-age=3600',
+        ]);
     }
 
     public function reorder(Request $request, Section $section): RedirectResponse

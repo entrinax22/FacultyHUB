@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Assignment;
+use App\Models\Enrollment;
 use App\Models\GradingComponent;
 use App\Models\GradingItemScore;
 use App\Models\Module;
 use App\Models\ModuleProgress;
 use App\Models\Section;
+use App\Models\Semester;
 use App\Models\TransmutationScale;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,13 +18,38 @@ use Inertia\Response;
 
 class StudentModuleController extends Controller
 {
-    public function dashboard(Request $request): Response
+    private function resolveStudent(Request $request)
     {
-        $student = $request->user()->student;
+        $user = $request->user();
+
+        if (! $user) {
+            abort(403);
+        }
+
+        if ($user->student) {
+            return $user->student;
+        }
+
+        // If a student record exists with the same email, auto-link it to this user.
+        // This supports flows where admins pre-create students, then create user accounts separately.
+        $student = \App\Models\Student::where('email', $user->email)->first();
 
         if (! $student) {
             abort(403, 'No student profile linked to this account.');
         }
+
+        if ($student->user_id && (int) $student->user_id !== (int) $user->id) {
+            abort(403, 'Student profile is already linked to another account.');
+        }
+
+        $student->forceFill(['user_id' => $user->id])->save();
+
+        return $student->fresh();
+    }
+
+    public function dashboard(Request $request): Response
+    {
+        $student = $this->resolveStudent($request);
 
         $enrollments = $student->enrollments()
             ->with(['section.subject', 'section.semester', 'semester'])
@@ -78,11 +105,7 @@ class StudentModuleController extends Controller
 
     public function sectionModules(Request $request, Section $section): Response
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         $enrolled = $student->enrollments()
             ->where('section_id', $section->id)
@@ -116,12 +139,13 @@ class StudentModuleController extends Controller
         ]);
     }
 
-    public function viewModule(Request $request, Module $module): Response
+    public function viewModule(Request $request, Section $section, Module $module): Response
     {
-        $student = $request->user()->student;
+        $student = $this->resolveStudent($request);
 
-        if (! $student) {
-            abort(403);
+        // Ensure the module actually belongs to the section in the URL
+        if ((int) $module->section_id !== (int) $section->id) {
+            abort(404);
         }
 
         if (! $module->is_published) {
@@ -129,7 +153,7 @@ class StudentModuleController extends Controller
         }
 
         $enrolled = $student->enrollments()
-            ->where('section_id', $module->section_id)
+            ->where('section_id', $section->id)
             ->where('status', 'active')
             ->exists();
 
@@ -148,11 +172,7 @@ class StudentModuleController extends Controller
 
     public function grades(Request $request, Section $section): Response
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         $enrolled = $student->enrollments()
             ->where('section_id', $section->id)
@@ -222,13 +242,67 @@ class StudentModuleController extends Controller
         ]);
     }
 
+    public function browseSections(Request $request): Response
+    {
+        $student = $this->resolveStudent($request);
+
+        $activeSemester = Semester::getActive();
+
+        $enrolledSectionIds = $student->enrollments()
+            ->where('status', 'active')
+            ->pluck('section_id');
+
+        $query = Section::with(['subject', 'semester', 'faculty'])
+            ->withCount(['enrollments' => fn ($q) => $q->where('status', 'active')]);
+
+        if ($activeSemester) {
+            $query->where('semester_id', $activeSemester->id);
+        }
+
+        $sections = $query->latest()->get()->map(fn ($s) => [
+            'id'               => $s->id,
+            'name'             => $s->name,
+            'schedule'         => $s->schedule,
+            'subject_code'     => $s->subject->code,
+            'subject_name'     => $s->subject->name,
+            'faculty_name'     => $s->faculty->name,
+            'semester'         => $s->semester->name.' '.$s->semester->school_year,
+            'enrollments_count' => $s->enrollments_count,
+            'is_enrolled'      => $enrolledSectionIds->contains($s->id),
+        ]);
+
+        return Inertia::render('student/BrowseSections', [
+            'sections'       => $sections,
+            'activeSemester' => $activeSemester,
+        ]);
+    }
+
+    public function selfEnroll(Request $request, Section $section): RedirectResponse
+    {
+        $student = $this->resolveStudent($request);
+
+        $alreadyEnrolled = Enrollment::where('student_id', $student->id)
+            ->where('section_id', $section->id)
+            ->exists();
+
+        if ($alreadyEnrolled) {
+            return back()->withErrors(['enroll' => 'You are already enrolled in this section.']);
+        }
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'section_id' => $section->id,
+            'semester_id' => $section->semester_id,
+            'status'     => 'active',
+        ]);
+
+        return redirect()->route('student.dashboard')
+            ->with('success', 'You have enrolled in '.$section->name.'.');
+    }
+
     public function markRead(Request $request, Module $module): RedirectResponse
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         if (! $module->is_published) {
             abort(404);
