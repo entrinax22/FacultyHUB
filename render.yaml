@@ -18,7 +18,7 @@ services:
           - key: APP_KEY
             generateValue: true
           - key: APP_URL
-            value: https://facultyhub-web.onrender.com # change to your actual URL
+            value: https://facultyhub-e1pj.onrender.com
 
           # Database — use the Render PostgreSQL values below
           - key: DB_CONNECTION
@@ -62,33 +62,33 @@ services:
           - key: AWS_SECRET_ACCESS_KEY
             sync: false
           - key: AWS_DEFAULT_REGION
-            value: auto # use "auto" for Cloudflare R2
+            value: auto
           - key: AWS_BUCKET
             sync: false
           - key: AWS_ENDPOINT
-            sync: false # e.g. https://<account>.r2.cloudflarestorage.com
+            sync: false
           - key: AWS_USE_PATH_STYLE_ENDPOINT
             value: true
           - key: AWS_URL
-            sync: false # public URL for files, e.g. https://pub.yourdomain.com
+            sync: false
 
           # AI — Google Gemini
           - key: GEMINI_API_KEY
             sync: false
 
-          # Mail (configure as needed)
+          # Mail
           - key: MAIL_MAILER
             value: log
 
           - key: LOG_LEVEL
             value: error
 
-    # ── Queue Worker ─────────────────────────────────────────────────────────────
-    - type: worker
-      name: facultyhub-worker
+    # ── Queue Runner (Cron — free plan alternative to a persistent worker) ───────
+    - type: cron
+      name: facultyhub-queue-runner
       runtime: docker
-      plan: free
-      dockerCommand: php artisan queue:work --tries=3 --timeout=120 --sleep=3
+      schedule: "* * * * *"
+      dockerCommand: php artisan queue:work --stop-when-empty --tries=3 --timeout=110
       envVars:
           - key: APP_NAME
             value: FacultyHUB
