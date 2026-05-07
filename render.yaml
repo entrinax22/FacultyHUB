@@ -88,7 +88,7 @@ services:
       name: facultyhub-worker
       runtime: docker
       plan: free
-      dockerCommand: php artisan queue:work --tries=3 --timeout=120 --sleep=3 --max-jobs=500
+      dockerCommand: php artisan queue:work --tries=3 --timeout=120 --sleep=3
       envVars:
           - key: APP_NAME
             value: FacultyHUB
