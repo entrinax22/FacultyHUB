@@ -142,4 +142,8 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::post('semesters/{semester}/set-active', [SemesterController::class, 'setActive'])->name('semesters.set-active');
 });
 
+Route::get('/health', function () {
+    return 'OK';
+});
+
 require __DIR__.'/settings.php';
