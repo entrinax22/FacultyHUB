@@ -21,8 +21,7 @@ class ClassRecordController extends Controller
     {
         $section->load(['subject', 'semester', 'faculty']);
 
-        $components    = $section->gradingComponents()->orderBy('order')->get();
-        $totalWeight   = $components->sum('weight_percentage');
+        $components = $section->gradingComponents()->orderBy('order')->get();
 
         $items = GradingItem::query()
             ->where('section_id', $section->id)
@@ -53,7 +52,7 @@ class ClassRecordController extends Controller
         $assignments = Assignment::where('section_id', $section->id)
             ->where('is_published', true)
             ->orderBy('created_at')
-            ->get(['id', 'title', 'max_score', 'type']);
+            ->get(['id', 'title', 'max_score', 'type', 'period', 'category', 'component_id']);
 
         $assignmentGrades = $assignments->isEmpty() || $studentIds->isEmpty()
             ? collect()
@@ -63,11 +62,14 @@ class ClassRecordController extends Controller
                 ->get()
                 ->groupBy(fn ($g) => "{$g->student_id}_{$g->assignment_id}");
 
-        $hasCustomScale  = TransmutationScale::where('section_id', $section->id)->exists();
+        $hasCustomScale   = TransmutationScale::where('section_id', $section->id)->exists();
         $itemsByComponent = $items->groupBy('component_id');
 
-        // Helper: compute weighted percentage for a set of components
-        $computePeriodGrade = function ($periodComponents) use ($itemsByComponent, &$scores) {
+        // Assignments linked to a component already appear as grading items — exclude from the standalone column
+        $standaloneAssignments = $assignments->whereNull('component_id')->values();
+
+        // Fix: pass $scores as a parameter so the closure uses the correct per-student array
+        $computePeriodGrade = function ($periodComponents, array $scores) use ($itemsByComponent) {
             $wSum   = 0;
             $wTotal = 0;
             foreach ($periodComponents as $comp) {
@@ -91,24 +93,34 @@ class ClassRecordController extends Controller
 
         $rows = $enrollments->map(function ($enrollment) use (
             $components, $itemsByComponent, $items, $itemScores,
-            $assignments, $assignmentGrades, $section,
+            $standaloneAssignments, $assignmentGrades, $section,
             $midtermComponents, $finalsComponents, $computePeriodGrade
         ) {
             $student = $enrollment->student;
             $scores  = [];
 
             foreach ($items as $item) {
-                $key           = "{$student->id}_{$item->id}";
-                $scores[$item->id] = $itemScores->get($key)?->first()?->score;
+                $key         = "{$student->id}_{$item->id}";
+                $manualScore = $itemScores->get($key)?->first()?->score;
+
+                if ($manualScore !== null) {
+                    $scores[$item->id] = $manualScore;
+                } elseif ($item->assignment_id) {
+                    $aKey  = "{$student->id}_{$item->assignment_id}";
+                    $grade = $assignmentGrades->get($aKey)?->first();
+                    $scores[$item->id] = $grade?->raw_score;
+                } else {
+                    $scores[$item->id] = null;
+                }
             }
 
-            // Midterm / Finals / Total
+            // Pass $scores explicitly so each student gets their own values
             $midtermGrade = $midtermComponents->isNotEmpty()
-                ? $computePeriodGrade($midtermComponents)
+                ? $computePeriodGrade($midtermComponents, $scores)
                 : null;
 
             $finalsGrade = $finalsComponents->isNotEmpty()
-                ? $computePeriodGrade($finalsComponents)
+                ? $computePeriodGrade($finalsComponents, $scores)
                 : null;
 
             if ($midtermGrade !== null && $finalsGrade !== null) {
@@ -116,7 +128,7 @@ class ClassRecordController extends Controller
             } elseif ($midtermGrade !== null || $finalsGrade !== null) {
                 $totalGrade = $midtermGrade ?? $finalsGrade;
             } else {
-                // No period tags — fall back to overall weighted sum
+                // No period-tagged components — fall back to overall weighted sum
                 $wSum = 0; $wTotal = 0;
                 foreach ($components as $comp) {
                     $compItems = $itemsByComponent->get($comp->id, collect());
@@ -138,9 +150,9 @@ class ClassRecordController extends Controller
                 ? TransmutationScale::transmute($totalGrade, $section->id)
                 : null;
 
-            // Assignment grades for this student
+            // Only show standalone assignments (linked ones are already in component columns)
             $studentAssignmentGrades = [];
-            foreach ($assignments as $a) {
+            foreach ($standaloneAssignments as $a) {
                 $key   = "{$student->id}_{$a->id}";
                 $grade = $assignmentGrades->get($key)?->first();
                 $studentAssignmentGrades[$a->id] = $grade ? [
@@ -153,14 +165,20 @@ class ClassRecordController extends Controller
             }
 
             return [
-                'student'           => $student,
-                'enrollment_id'     => $enrollment->id,
-                'scores'            => $scores,
-                'assignment_grades' => $studentAssignmentGrades,
-                'midterm_grade'     => $midtermGrade,
-                'finals_grade'      => $finalsGrade,
-                'total_grade'       => $totalGrade,
-                'final_grade'       => $finalGrade,
+                'student'              => $student,
+                'enrollment_id'        => $enrollment->id,
+                'scores'               => $scores,
+                'assignment_grades'    => $studentAssignmentGrades,
+                'midterm_grade'        => $midtermGrade,
+                'finals_grade'         => $finalsGrade,
+                'total_grade'          => $totalGrade,
+                'final_grade'          => $finalGrade,
+                'midterm_final_grade'  => $midtermGrade !== null
+                    ? TransmutationScale::transmute($midtermGrade, $section->id)
+                    : null,
+                'finals_final_grade'   => $finalsGrade !== null
+                    ? TransmutationScale::transmute($finalsGrade, $section->id)
+                    : null,
             ];
         })->values();
 
@@ -168,7 +186,7 @@ class ClassRecordController extends Controller
             'section'       => $section,
             'components'    => $components,
             'items'         => $items,
-            'assignments'   => $assignments,
+            'assignments'   => $standaloneAssignments,
             'midtermWeight' => $components->where('period', 'midterm')->sum('weight_percentage'),
             'finalsWeight'  => $components->where('period', 'finals')->sum('weight_percentage'),
             'generalWeight' => $components->whereNull('period')->sum('weight_percentage'),

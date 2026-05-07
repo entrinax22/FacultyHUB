@@ -16,6 +16,8 @@ type Row = {
     finals_grade: number | null;
     total_grade: number | null;
     final_grade: string | null;
+    midterm_final_grade: string | null;
+    finals_final_grade: string | null;
 };
 type GradingComponent = { id: number; name: string; weight_percentage: number; max_score: number; period: string | null; is_locked: boolean };
 type GradingItem = { id: number; component_id: number; name: string; max_score: number; is_enabled: boolean; order: number };
@@ -343,11 +345,19 @@ const typeLabel: Record<string, string> = { essay: 'Essay', mcq: 'MCQ', code: 'C
 
                         <!-- Midterm Grade -->
                         <td v-if="hasPeriods" class="px-4 py-2 text-center border-l bg-blue-50/20" :class="gradeColor(row.midterm_grade)">
-                            {{ row.midterm_grade !== null ? row.midterm_grade.toFixed(2) + '%' : '—' }}
+                            <template v-if="row.midterm_grade !== null">
+                                <div class="font-semibold">{{ row.midterm_final_grade }}</div>
+                                <div class="text-xs text-muted-foreground">{{ row.midterm_grade.toFixed(2) }}%</div>
+                            </template>
+                            <template v-else>—</template>
                         </td>
                         <!-- Finals Grade -->
                         <td v-if="hasPeriods" class="px-4 py-2 text-center bg-blue-50/20" :class="gradeColor(row.finals_grade)">
-                            {{ row.finals_grade !== null ? row.finals_grade.toFixed(2) + '%' : '—' }}
+                            <template v-if="row.finals_grade !== null">
+                                <div class="font-semibold">{{ row.finals_final_grade }}</div>
+                                <div class="text-xs text-muted-foreground">{{ row.finals_grade.toFixed(2) }}%</div>
+                            </template>
+                            <template v-else>—</template>
                         </td>
                         <!-- Total -->
                         <td class="px-4 py-2 text-center" :class="[gradeColor(row.total_grade), hasPeriods ? 'bg-blue-50/20' : '']">
