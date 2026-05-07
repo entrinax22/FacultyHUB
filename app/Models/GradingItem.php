@@ -9,6 +9,7 @@ class GradingItem extends Model
     protected $fillable = [
         'section_id',
         'component_id',
+        'assignment_id',
         'name',
         'max_score',
         'order',

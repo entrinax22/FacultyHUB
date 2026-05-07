@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ResolvesStudent;
 use App\Models\Assignment;
 use App\Models\Enrollment;
 use App\Models\GradingComponent;
@@ -18,34 +19,7 @@ use Inertia\Response;
 
 class StudentModuleController extends Controller
 {
-    private function resolveStudent(Request $request)
-    {
-        $user = $request->user();
-
-        if (! $user) {
-            abort(403);
-        }
-
-        if ($user->student) {
-            return $user->student;
-        }
-
-        // If a student record exists with the same email, auto-link it to this user.
-        // This supports flows where admins pre-create students, then create user accounts separately.
-        $student = \App\Models\Student::where('email', $user->email)->first();
-
-        if (! $student) {
-            abort(403, 'No student profile linked to this account.');
-        }
-
-        if ($student->user_id && (int) $student->user_id !== (int) $user->id) {
-            abort(403, 'Student profile is already linked to another account.');
-        }
-
-        $student->forceFill(['user_id' => $user->id])->save();
-
-        return $student->fresh();
-    }
+    use ResolvesStudent;
 
     public function dashboard(Request $request): Response
     {

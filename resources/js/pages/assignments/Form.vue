@@ -13,6 +13,7 @@ type Choice = { id?: number; choice_text: string; is_correct: boolean };
 type Question = { id?: number; question: string; points: number; choices: Choice[] };
 
 type Module = { id: number; title: string };
+type GradingComponent = { id: number; name: string; period: string | null; weight_percentage: number };
 type Section = {
     id: number; name: string;
     subject: { code: string; name: string };
@@ -20,13 +21,14 @@ type Section = {
 };
 type Assignment = {
     id: number; title: string; instructions: string; type: string;
+    period: string | null; category: string | null; component_id: number | null;
     due_date: string | null; max_score: number; passing_score: number | null;
     is_published: boolean; rubric: string | null; language: string | null;
     answer_release_at: string | null; module_id: number | null;
     questions: Question[];
 };
 
-const props = defineProps<{ section: Section; modules: Module[]; assignment?: Assignment }>();
+const props = defineProps<{ section: Section; modules: Module[]; components: GradingComponent[]; assignment?: Assignment }>();
 
 defineOptions({
     layout: {
@@ -41,6 +43,9 @@ const form = useForm({
     title: props.assignment?.title ?? '',
     instructions: props.assignment?.instructions ?? '',
     type: props.assignment?.type ?? 'essay',
+    period: props.assignment?.period ?? 'none',
+    category: props.assignment?.category ?? 'none',
+    component_id: props.assignment?.component_id?.toString() ?? 'none',
     due_date: props.assignment?.due_date?.slice(0, 16) ?? '',
     max_score: props.assignment?.max_score ?? 100,
     passing_score: props.assignment?.passing_score ?? '',
@@ -48,8 +53,19 @@ const form = useForm({
     rubric: props.assignment?.rubric ?? '',
     language: props.assignment?.language ?? 'python',
     answer_release_at: props.assignment?.answer_release_at?.slice(0, 16) ?? '',
-    module_id: props.assignment?.module_id?.toString() ?? '',
+    module_id: props.assignment?.module_id?.toString() ?? 'none',
     questions: [] as Question[],
+});
+
+// Reset component when category is cleared
+watch(() => form.category, (val) => {
+    if (val === 'none') form.component_id = 'none';
+});
+
+// Filter components to match the selected period (or show all if no period set)
+const filteredComponents = computed(() => {
+    if (form.period === 'none' || !form.period) return props.components;
+    return props.components.filter(c => c.period === form.period || c.period === null);
 });
 
 // MCQ question state (managed separately, merged on submit)
@@ -93,6 +109,10 @@ const codeLanguages = ['python', 'javascript', 'java', 'cpp', 'csharp', 'php', '
 
 function submit() {
     form.questions = questions.value;
+    if (form.period === 'none') form.period = '';
+    if (form.category === 'none') form.category = '';
+    if (form.component_id === 'none') form.component_id = '';
+    if (form.module_id === 'none') form.module_id = '';
     if (props.assignment) {
         form.put(`/assignments/${props.assignment.id}`);
     } else {
@@ -123,7 +143,8 @@ function submit() {
                 <InputError :message="form.errors.title" />
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <!-- Type / Category / Period -->
+            <div class="grid grid-cols-3 gap-4">
                 <div class="grid gap-1.5">
                     <Label>Type</Label>
                     <Select v-model="form.type" :disabled="!!assignment">
@@ -136,16 +157,68 @@ function submit() {
                     </Select>
                     <InputError :message="form.errors.type" />
                 </div>
-                <div v-if="modules.length" class="grid gap-1.5">
-                    <Label>Linked Module <span class="text-muted-foreground">(optional)</span></Label>
-                    <Select v-model="form.module_id">
+                <div class="grid gap-1.5">
+                    <Label>Category <span class="text-muted-foreground">(optional)</span></Label>
+                    <Select v-model="form.category">
                         <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="">None</SelectItem>
-                            <SelectItem v-for="m in modules" :key="m.id" :value="m.id.toString()">{{ m.title }}</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="quiz">Quiz</SelectItem>
+                            <SelectItem value="exam">Exam</SelectItem>
+                            <SelectItem value="activity">Activity</SelectItem>
+                            <SelectItem value="project">Project</SelectItem>
                         </SelectContent>
                     </Select>
+                    <InputError :message="form.errors.category" />
                 </div>
+                <div class="grid gap-1.5">
+                    <Label>Period <span class="text-muted-foreground">(optional)</span></Label>
+                    <Select v-model="form.period">
+                        <SelectTrigger><SelectValue placeholder="No period" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">No period</SelectItem>
+                            <SelectItem value="midterm">Midterm</SelectItem>
+                            <SelectItem value="finals">Finals</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <InputError :message="form.errors.period" />
+                </div>
+            </div>
+
+            <!-- Grading Component (shown when a category is selected) -->
+            <div v-if="form.category !== 'none' && components.length" class="grid gap-1.5 max-w-sm">
+                <Label>
+                    Grading Component
+                    <span class="text-muted-foreground">(adds an assessment item automatically)</span>
+                </Label>
+                <Select v-model="form.component_id">
+                    <SelectTrigger><SelectValue placeholder="Select component…" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem v-for="c in filteredComponents" :key="c.id" :value="c.id.toString()">
+                            {{ c.name }}
+                            <span class="ml-1 text-xs text-muted-foreground capitalize">
+                                ({{ c.period ?? 'general' }} · {{ c.weight_percentage }}%)
+                            </span>
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
+                <p v-if="form.component_id !== 'none'" class="text-xs text-muted-foreground">
+                    An assessment item named "{{ form.title || 'this assignment' }}" will be created under the selected component.
+                </p>
+                <InputError :message="form.errors.component_id" />
+            </div>
+
+            <!-- Linked Module -->
+            <div v-if="modules.length" class="grid gap-1.5 max-w-sm">
+                <Label>Linked Module <span class="text-muted-foreground">(optional)</span></Label>
+                <Select v-model="form.module_id">
+                    <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem v-for="m in modules" :key="m.id" :value="m.id.toString()">{{ m.title }}</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             <!-- Code language picker -->

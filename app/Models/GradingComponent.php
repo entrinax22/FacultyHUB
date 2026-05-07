@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class GradingComponent extends Model
 {
-    protected $fillable = ['section_id', 'name', 'weight_percentage', 'max_score', 'order', 'is_locked'];
+    protected $fillable = ['section_id', 'name', 'weight_percentage', 'max_score', 'order', 'period', 'is_locked'];
 
     protected $casts = [
         'weight_percentage' => 'float',

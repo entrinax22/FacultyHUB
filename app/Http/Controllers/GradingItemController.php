@@ -15,7 +15,7 @@ class GradingItemController extends Controller
     public function index(Section $section): Response
     {
         $section->load(['subject', 'semester']);
-        $components = $section->gradingComponents()->orderBy('order')->get();
+        $components = $section->gradingComponents()->orderBy('order')->get(['id', 'name', 'weight_percentage', 'period', 'order', 'is_locked']);
 
         $items = GradingItem::query()
             ->where('section_id', $section->id)

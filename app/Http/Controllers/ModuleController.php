@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ResolvesStudent;
 use App\Models\Module;
 use App\Models\ModuleFile;
 use App\Models\Section;
@@ -15,6 +16,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ModuleController extends Controller
 {
+    use ResolvesStudent;
     public function index(Section $section): Response
     {
         $section->load(['subject', 'semester']);
@@ -175,8 +177,8 @@ class ModuleController extends Controller
 
         // Students: must be enrolled and module must be published
         if ($user->isStudent()) {
-            $student  = $user->student;
-            $enrolled = $student?->enrollments()
+            $student  = $this->resolveStudent($request);
+            $enrolled = $student->enrollments()
                 ->where('section_id', $module->section_id)
                 ->where('status', 'active')
                 ->exists();

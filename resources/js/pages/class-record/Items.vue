@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { Plus, Pencil, Trash2, Power, ArrowLeft } from 'lucide-vue-next';
+import { Plus, Pencil, Trash2, ArrowLeft, ClipboardList, Link2 } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import InputError from '@/components/InputError.vue';
 
 type Section = {
@@ -13,11 +13,18 @@ type Section = {
     subject: { code: string; name: string };
     semester: { name: string; school_year: string };
 };
-type Component = { id: number; name: string; weight_percentage: number; is_locked: boolean };
+type Component = {
+    id: number;
+    name: string;
+    weight_percentage: number;
+    period: string | null;
+    is_locked: boolean;
+};
 type Item = {
     id: number;
     section_id: number;
     component_id: number;
+    assignment_id: number | null;
     name: string;
     max_score: number;
     order: number;
@@ -40,9 +47,79 @@ defineOptions({
     },
 });
 
-const addForm = useForm({ component_id: '', name: '', max_score: '100' });
+// Per-component add state
+const adding = ref<Record<number, { name: string; max_score: string; error: string }>>({});
+const processing = ref<number | null>(null);
+
+function getAdd(componentId: number) {
+    if (!adding.value[componentId]) {
+        adding.value[componentId] = { name: '', max_score: '20', error: '' };
+    }
+    return adding.value[componentId];
+}
+
+function addItem(component: Component) {
+    const form = getAdd(component.id);
+    form.error = '';
+
+    if (!form.name.trim()) { form.error = 'Name is required.'; return; }
+    if (!form.max_score || Number(form.max_score) < 1) { form.error = 'Max score must be at least 1.'; return; }
+
+    processing.value = component.id;
+    router.post(`/sections/${props.section.id}/items`, {
+        component_id: component.id,
+        name: form.name.trim(),
+        max_score: Number(form.max_score),
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            form.name = '';
+            form.max_score = '20';
+        },
+        onFinish: () => { processing.value = null; },
+    });
+}
+
+function applyPreset(componentId: number, name: string, max: number) {
+    const form = getAdd(componentId);
+    form.name = name;
+    form.max_score = String(max);
+}
+
+// Edit state
 const editingId = ref<number | null>(null);
-const editForm = useForm({ name: '', max_score: '100' });
+const editName = ref('');
+const editMax = ref('');
+
+function startEdit(item: Item) {
+    editingId.value = item.id;
+    editName.value = item.name;
+    editMax.value = String(item.max_score);
+}
+
+function cancelEdit() {
+    editingId.value = null;
+}
+
+function saveEdit(item: Item) {
+    router.put(`/items/${item.id}`, {
+        name: editName.value,
+        max_score: Number(editMax.value),
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { editingId.value = null; },
+    });
+}
+
+function toggle(item: Item) {
+    router.post(`/items/${item.id}/toggle`, {}, { preserveScroll: true });
+}
+
+function remove(item: Item) {
+    if (confirm(`Remove "${item.name}"? Recorded scores will also be deleted.`)) {
+        router.delete(`/items/${item.id}`, { preserveScroll: true });
+    }
+}
 
 const itemsByComponent = computed(() => {
     const map: Record<number, Item[]> = {};
@@ -57,161 +134,192 @@ const itemsByComponent = computed(() => {
     return map;
 });
 
-function addItem() {
-    addForm.post(`/sections/${props.section.id}/items`, { onSuccess: () => addForm.reset('name') });
-}
+const periodColor: Record<string, string> = {
+    midterm: 'border-blue-300 bg-blue-50/50 dark:bg-blue-950/20',
+    finals:  'border-purple-300 bg-purple-50/50 dark:bg-purple-950/20',
+};
+const periodBadge: Record<string, string> = {
+    midterm: 'text-blue-700 border-blue-300',
+    finals:  'text-purple-700 border-purple-300',
+};
 
-function startEdit(item: Item) {
-    editingId.value = item.id;
-    editForm.name = item.name;
-    editForm.max_score = String(item.max_score ?? 100);
-}
-
-function cancelEdit() {
-    editingId.value = null;
-    editForm.reset();
-}
-
-function saveEdit(itemId: number) {
-    editForm.put(`/items/${itemId}`, { onSuccess: () => (editingId.value = null) });
-}
-
-function toggle(item: Item) {
-    router.post(`/items/${item.id}/toggle`);
-}
-
-function remove(item: Item) {
-    if (confirm(`Remove "${item.name}"? Scores recorded for it will also be deleted.`)) {
-        router.delete(`/items/${item.id}`);
-    }
+// Suggested presets per component (based on name keywords)
+function presetsFor(name: string): { label: string; max: number }[] {
+    const n = name.toLowerCase();
+    if (n.includes('quiz'))       return [{ label: 'Quiz 1', max: 20 }, { label: 'Quiz 2', max: 20 }, { label: 'Quiz 3', max: 20 }];
+    if (n.includes('activ'))      return [{ label: 'Activity 1', max: 50 }, { label: 'Activity 2', max: 50 }];
+    if (n.includes('assign'))     return [{ label: 'Assignment 1', max: 100 }, { label: 'Assignment 2', max: 100 }];
+    if (n.includes('exam') || n.includes('midterm') || n.includes('final'))
+                                  return [{ label: 'Written Exam', max: 100 }, { label: 'Practical Exam', max: 50 }];
+    if (n.includes('attend'))     return [{ label: 'Attendance', max: 30 }];
+    if (n.includes('project'))    return [{ label: 'Project', max: 100 }];
+    if (n.includes('recit'))      return [{ label: 'Recitation 1', max: 20 }, { label: 'Recitation 2', max: 20 }];
+    return [];
 }
 </script>
 
 <template>
     <Head :title="`Items — ${section.name}`" />
 
-    <div class="flex h-full flex-1 flex-col gap-6 p-4 max-w-3xl">
+    <div class="flex h-full flex-1 flex-col gap-6 p-4">
+        <!-- Header -->
         <div class="flex items-start gap-3">
             <Button variant="ghost" size="sm" as-child class="-ml-2 mt-0.5">
-                <Link :href="`/sections/${section.id}/class-record`"><ArrowLeft class="h-4 w-4" /></Link>
+                <Link :href="`/sections/${section.id}/class-record`">
+                    <ArrowLeft class="h-4 w-4" />
+                </Link>
             </Button>
             <div class="flex-1">
-                <h1 class="text-2xl font-semibold">Assessment Items</h1>
+                <h1 class="text-xl font-semibold">Assessment Items</h1>
                 <p class="text-sm text-muted-foreground">
-                    Add as many quizzes/activities as you want per component (e.g., Quiz 1, Quiz 2). Disable items to exclude them from computations.
+                    {{ section.subject.code }} · {{ section.name }} — Add quizzes, activities, exams, etc. under each component.
                 </p>
             </div>
-        </div>
-
-        <!-- Add item -->
-        <div class="rounded-xl border p-4 space-y-3">
-            <p class="font-medium text-sm">Add Item</p>
-            <div class="grid gap-3 sm:grid-cols-4">
-                <div class="grid gap-1.5 sm:col-span-2">
-                    <Label class="text-xs">Component</Label>
-                    <select
-                        v-model="addForm.component_id"
-                        class="h-10 rounded-md border border-input bg-transparent px-3 text-sm"
-                    >
-                        <option value="" disabled>Select component…</option>
-                        <option v-for="c in components" :key="c.id" :value="c.id">{{ c.name }} ({{ c.weight_percentage }}%)</option>
-                    </select>
-                    <InputError :message="addForm.errors.component_id" />
-                </div>
-
-                <div class="grid gap-1.5">
-                    <Label class="text-xs">Name</Label>
-                    <Input v-model="addForm.name" placeholder="e.g. Quiz 1" />
-                    <InputError :message="addForm.errors.name" />
-                </div>
-
-                <div class="grid gap-1.5">
-                    <Label class="text-xs">Max Score</Label>
-                    <Input type="number" v-model="addForm.max_score" min="1" step="1" placeholder="20" />
-                    <InputError :message="addForm.errors.max_score" />
-                </div>
-            </div>
-
-            <Button :disabled="addForm.processing || !addForm.component_id" @click="addItem">
-                <Plus class="mr-1.5 h-4 w-4" />
-                Add Item
+            <Button variant="outline" size="sm" as-child>
+                <Link :href="`/sections/${section.id}/class-record`">
+                    <ClipboardList class="mr-1.5 h-3.5 w-3.5" />
+                    Class Record
+                </Link>
             </Button>
         </div>
 
-        <!-- List -->
-        <div class="space-y-3">
+        <!-- No components yet -->
+        <div v-if="components.length === 0" class="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
+            <p class="text-sm">No grading components set up yet.</p>
+            <Button variant="outline" size="sm" class="mt-3" as-child>
+                <Link :href="`/sections/${section.id}/components`">Set Up Components</Link>
+            </Button>
+        </div>
+
+        <!-- One card per component -->
+        <div v-else class="space-y-4 max-w-2xl">
             <div
-                v-for="c in components"
-                :key="c.id"
+                v-for="comp in components"
+                :key="comp.id"
                 class="rounded-xl border overflow-hidden"
+                :class="comp.period ? periodColor[comp.period] : ''"
             >
-                <div class="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+                <!-- Component header -->
+                <div class="flex items-center justify-between border-b px-4 py-3 bg-muted/20">
                     <div>
-                        <p class="font-medium">{{ c.name }}</p>
-                        <p class="text-xs text-muted-foreground">{{ c.weight_percentage }}% weight</p>
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold">{{ comp.name }}</span>
+                            <Badge variant="outline" class="text-xs" :class="comp.period ? periodBadge[comp.period] : ''">
+                                {{ comp.period ? comp.period.charAt(0).toUpperCase() + comp.period.slice(1) : 'General' }}
+                                · {{ comp.weight_percentage }}%
+                            </Badge>
+                            <Badge v-if="comp.is_locked" variant="secondary" class="text-xs">Locked</Badge>
+                        </div>
+                        <p class="text-xs text-muted-foreground mt-0.5">
+                            {{ itemsByComponent[comp.id]?.length ?? 0 }} item{{ (itemsByComponent[comp.id]?.length ?? 0) !== 1 ? 's' : '' }}
+                            <span v-if="itemsByComponent[comp.id]?.some(i => !i.is_enabled)" class="ml-1 text-orange-500">
+                                · {{ itemsByComponent[comp.id]?.filter(i => !i.is_enabled).length }} disabled
+                            </span>
+                        </p>
                     </div>
-                    <Button variant="outline" size="sm" as-child>
-                        <Link :href="`/sections/${section.id}/class-record`">Open Class Record</Link>
-                    </Button>
                 </div>
 
-                <div v-if="itemsByComponent[c.id].length === 0" class="p-4 text-sm text-muted-foreground">
-                    No items yet.
-                </div>
-
-                <div v-else class="divide-y">
+                <!-- Existing items -->
+                <div v-if="itemsByComponent[comp.id]?.length" class="divide-y">
                     <div
-                        v-for="item in itemsByComponent[c.id]"
+                        v-for="item in itemsByComponent[comp.id]"
                         :key="item.id"
-                        class="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                        class="flex items-center gap-3 px-4 py-2.5"
+                        :class="!item.is_enabled ? 'opacity-50' : ''"
                     >
-                        <div class="flex-1">
-                            <div v-if="editingId === item.id" class="grid gap-2 sm:grid-cols-2">
-                                <div class="grid gap-1.5">
-                                    <Label class="text-xs">Name</Label>
-                                    <Input v-model="editForm.name" />
-                                    <InputError :message="editForm.errors.name" />
-                                </div>
-                                <div class="grid gap-1.5">
-                                    <Label class="text-xs">Max</Label>
-                                    <Input type="number" v-model="editForm.max_score" min="1" step="1" />
-                                    <InputError :message="editForm.errors.max_score" />
-                                </div>
-                                <div class="flex gap-2">
-                                    <Button size="sm" :disabled="editForm.processing" @click="saveEdit(item.id)">Save</Button>
-                                    <Button size="sm" variant="ghost" @click="cancelEdit">Cancel</Button>
-                                </div>
-                            </div>
+                        <!-- Edit mode -->
+                        <template v-if="editingId === item.id">
+                            <Input v-model="editName" class="h-8 flex-1 text-sm" placeholder="Item name" />
+                            <Input v-model="editMax" type="number" min="1" class="h-8 w-20 text-sm text-center" />
+                            <Button size="sm" class="h-8 text-xs px-3" @click="saveEdit(item)">Save</Button>
+                            <Button size="sm" variant="ghost" class="h-8 text-xs px-2" @click="cancelEdit">✕</Button>
+                        </template>
 
-                            <div v-else>
-                                <p class="font-medium">
-                                    {{ item.name }}
-                                    <span class="ml-2 text-xs text-muted-foreground">/ {{ item.max_score }}</span>
-                                    <span
-                                        class="ml-2 rounded-md border px-2 py-0.5 text-[11px]"
-                                        :class="item.is_enabled ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300' : 'bg-muted text-muted-foreground'"
-                                    >
-                                        {{ item.is_enabled ? 'Enabled' : 'Disabled' }}
-                                    </span>
-                                </p>
+                        <!-- View mode -->
+                        <template v-else>
+                            <div class="flex-1 min-w-0 flex items-center gap-2">
+                                <span class="text-sm font-medium">{{ item.name }}</span>
+                                <span class="text-xs text-muted-foreground">/ {{ item.max_score }}</span>
+                                <Badge v-if="item.assignment_id" variant="outline" class="text-xs text-sky-600 border-sky-300 gap-1 shrink-0" title="Auto-created from assignment">
+                                    <Link2 class="h-3 w-3" /> Assignment
+                                </Badge>
                             </div>
-                        </div>
-
-                        <div v-if="editingId !== item.id" class="flex gap-1.5">
-                            <Button variant="ghost" size="sm" :title="item.is_enabled ? 'Disable' : 'Enable'" @click="toggle(item)">
-                                <Power class="h-4 w-4" />
+                            <Badge
+                                variant="outline"
+                                class="text-xs shrink-0 cursor-pointer select-none"
+                                :class="item.is_enabled ? 'text-green-600 border-green-300 hover:bg-green-50' : 'text-muted-foreground hover:bg-muted/50'"
+                                @click="toggle(item)"
+                                :title="item.is_enabled ? 'Click to disable' : 'Click to enable'"
+                            >
+                                {{ item.is_enabled ? 'On' : 'Off' }}
+                            </Badge>
+                            <Button v-if="!item.assignment_id" variant="ghost" size="sm" class="h-7 w-7 p-0 shrink-0" @click="startEdit(item)">
+                                <Pencil class="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="sm" @click="startEdit(item)">
-                                <Pencil class="h-4 w-4" />
+                            <Button v-if="!item.assignment_id" variant="ghost" size="sm" class="h-7 w-7 p-0 shrink-0 text-destructive hover:text-destructive" @click="remove(item)">
+                                <Trash2 class="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="remove(item)">
-                                <Trash2 class="h-4 w-4" />
-                            </Button>
-                        </div>
+                        </template>
                     </div>
+                </div>
+
+                <!-- Empty state -->
+                <div v-else class="px-4 py-3 text-sm text-muted-foreground">
+                    No items yet — add the first one below.
+                </div>
+
+                <!-- Add item form (inline, scoped to this component) -->
+                <div v-if="!comp.is_locked" class="border-t bg-muted/10 px-4 py-3 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <Input
+                            v-model="getAdd(comp.id).name"
+                            class="h-8 flex-1 text-sm"
+                            :placeholder="`New item for ${comp.name} (e.g. Quiz 1)`"
+                            @keydown.enter="addItem(comp)"
+                        />
+                        <Input
+                            v-model="getAdd(comp.id).max_score"
+                            type="number"
+                            min="1"
+                            class="h-8 w-20 text-center text-sm"
+                            placeholder="Max"
+                            @keydown.enter="addItem(comp)"
+                        />
+                        <Button
+                            size="sm"
+                            class="h-8 shrink-0"
+                            :disabled="processing === comp.id"
+                            @click="addItem(comp)"
+                        >
+                            <Plus class="h-3.5 w-3.5 mr-1" />
+                            Add
+                        </Button>
+                    </div>
+
+                    <!-- Inline error -->
+                    <p v-if="getAdd(comp.id).error" class="text-xs text-destructive">
+                        {{ getAdd(comp.id).error }}
+                    </p>
+
+                    <!-- Smart presets -->
+                    <div v-if="presetsFor(comp.name).length" class="flex flex-wrap gap-1.5">
+                        <span class="text-xs text-muted-foreground self-center">Quick add:</span>
+                        <button
+                            v-for="p in presetsFor(comp.name)"
+                            :key="p.label"
+                            type="button"
+                            class="rounded-md border px-2 py-0.5 text-xs hover:bg-muted/60 transition-colors"
+                            @click="applyPreset(comp.id, p.label, p.max)"
+                        >
+                            {{ p.label }} <span class="text-muted-foreground">({{ p.max }})</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div v-else class="border-t bg-muted/10 px-4 py-2.5 text-xs text-muted-foreground">
+                    This component is locked — unlock it in Components to add items.
                 </div>
             </div>
         </div>
     </div>
 </template>
-

@@ -130,14 +130,15 @@ PROMPT;
         try {
             $url = "{$this->baseUrl}/{$this->model}:generateContent?key={$this->apiKey}";
 
-            $response = Http::post($url, [
+            $response = Http::timeout(60)->post($url, [
                 'contents' => [
                     ['parts' => [['text' => $prompt]]],
                 ],
                 'generationConfig' => [
-                    'temperature' => 0.1,
-                    'maxOutputTokens' => 2048,
-                    'responseMimeType' => 'application/json',
+                    'temperature'       => 0.1,
+                    'maxOutputTokens'   => 4096,
+                    'responseMimeType'  => 'application/json',
+                    'thinkingConfig'    => ['thinkingBudget' => 0],
                 ],
             ])->throw()->json();
 

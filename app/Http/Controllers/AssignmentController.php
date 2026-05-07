@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Assignment;
-use App\Models\Module;
+use App\Models\GradingComponent;
+use App\Models\GradingItem;
 use App\Models\Section;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,8 +32,9 @@ class AssignmentController extends Controller
         $section->load(['subject', 'semester']);
 
         return Inertia::render('assignments/Form', [
-            'section' => $section,
-            'modules' => $section->modules()->where('is_published', true)->get(['id', 'title']),
+            'section'    => $section,
+            'modules'    => $section->modules()->where('is_published', true)->get(['id', 'title']),
+            'components' => $section->gradingComponents()->orderBy('order')->get(['id', 'name', 'period', 'weight_percentage']),
         ]);
     }
 
@@ -44,6 +46,8 @@ class AssignmentController extends Controller
         if ($assignment->type === 'mcq') {
             $this->syncQuestions($assignment, $request->input('questions', []));
         }
+
+        $this->syncGradingItem($assignment);
 
         return redirect()
             ->route('sections.assignments.index', $section)
@@ -60,8 +64,8 @@ class AssignmentController extends Controller
             ->get();
 
         return Inertia::render('assignments/Show', [
-            'assignment' => $assignment,
-            'submissions' => $submissions,
+            'assignment'    => $assignment,
+            'submissions'   => $submissions,
             'plagiarismRan' => $assignment->plagiarismReports()->exists(),
         ]);
     }
@@ -72,8 +76,9 @@ class AssignmentController extends Controller
 
         return Inertia::render('assignments/Form', [
             'assignment' => $assignment,
-            'section' => $assignment->section,
-            'modules' => $assignment->section->modules()->where('is_published', true)->get(['id', 'title']),
+            'section'    => $assignment->section,
+            'modules'    => $assignment->section->modules()->where('is_published', true)->get(['id', 'title']),
+            'components' => $assignment->section->gradingComponents()->orderBy('order')->get(['id', 'name', 'period', 'weight_percentage']),
         ]);
     }
 
@@ -85,6 +90,8 @@ class AssignmentController extends Controller
         if ($assignment->type === 'mcq') {
             $this->syncQuestions($assignment, $request->input('questions', []));
         }
+
+        $this->syncGradingItem($assignment);
 
         return redirect()
             ->route('sections.assignments.index', $assignment->section_id)
@@ -111,18 +118,54 @@ class AssignmentController extends Controller
     private function validateAssignment(Request $request): array
     {
         return $request->validate([
-            'title' => 'required|string|max:255',
-            'instructions' => 'required|string',
-            'type' => 'required|in:essay,mcq,code',
-            'due_date' => 'nullable|date',
-            'max_score' => 'required|numeric|min:1',
-            'passing_score' => 'nullable|numeric|min:0',
-            'is_published' => 'boolean',
-            'rubric' => 'nullable|string',
-            'language' => 'nullable|string|max:30',
+            'title'             => 'required|string|max:255',
+            'instructions'      => 'required|string',
+            'type'              => 'required|in:essay,mcq,code',
+            'period'            => 'nullable|in:midterm,finals',
+            'category'          => 'nullable|in:quiz,exam,activity,project',
+            'component_id'      => 'nullable|exists:grading_components,id',
+            'due_date'          => 'nullable|date',
+            'max_score'         => 'required|numeric|min:1',
+            'passing_score'     => 'nullable|numeric|min:0',
+            'is_published'      => 'boolean',
+            'rubric'            => 'nullable|string',
+            'language'          => 'nullable|string|max:30',
             'answer_release_at' => 'nullable|date',
-            'module_id' => 'nullable|exists:modules,id',
+            'module_id'         => 'nullable|exists:modules,id',
         ]);
+    }
+
+    private function syncGradingItem(Assignment $assignment): void
+    {
+        // Remove existing linked item if component was cleared
+        if (! $assignment->component_id) {
+            GradingItem::where('assignment_id', $assignment->id)->delete();
+            return;
+        }
+
+        $existing = GradingItem::where('assignment_id', $assignment->id)->first();
+
+        if ($existing) {
+            $existing->update([
+                'component_id' => $assignment->component_id,
+                'name'         => $assignment->title,
+                'max_score'    => $assignment->max_score,
+            ]);
+        } else {
+            $order = GradingItem::where('section_id', $assignment->section_id)
+                ->where('component_id', $assignment->component_id)
+                ->max('order') + 1;
+
+            GradingItem::create([
+                'section_id'    => $assignment->section_id,
+                'component_id'  => $assignment->component_id,
+                'assignment_id' => $assignment->id,
+                'name'          => $assignment->title,
+                'max_score'     => $assignment->max_score,
+                'order'         => $order ?: 1,
+                'is_enabled'    => true,
+            ]);
+        }
     }
 
     private function syncQuestions(Assignment $assignment, array $questions): void
@@ -139,8 +182,8 @@ class AssignmentController extends Controller
             } else {
                 $question = $assignment->questions()->create([
                     'question' => $qData['question'],
-                    'order' => $order,
-                    'points' => $qData['points'] ?? 1,
+                    'order'    => $order,
+                    'points'   => $qData['points'] ?? 1,
                 ]);
             }
 
@@ -151,7 +194,7 @@ class AssignmentController extends Controller
         $assignment->questions()->whereNotIn('id', $existingIds)->delete();
     }
 
-    private function syncChoices($question, array $choices): void
+    private function syncChoices(\App\Models\AssignmentQuestion $question, array $choices): void
     {
         $existingIds = [];
 
@@ -165,8 +208,8 @@ class AssignmentController extends Controller
             } else {
                 $choice = $question->choices()->create([
                     'choice_text' => $cData['choice_text'],
-                    'is_correct' => $cData['is_correct'] ?? false,
-                    'order' => $order,
+                    'is_correct'  => $cData['is_correct'] ?? false,
+                    'order'       => $order,
                 ]);
             }
 

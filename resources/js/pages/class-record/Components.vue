@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Plus, Pencil, Trash2, Lock, Unlock, AlertTriangle, Check } from 'lucide-vue-next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import InputError from '@/components/InputError.vue';
 
 type Component = {
-    id: number; name: string; weight_percentage: number; max_score: number; order: number; is_locked: boolean;
+    id: number; name: string; weight_percentage: number; max_score: number; order: number; period: string | null; is_locked: boolean;
 };
 type Section = {
     id: number; name: string;
@@ -20,7 +20,9 @@ type Section = {
 const props = defineProps<{
     section: Section;
     components: Component[];
-    totalWeight: number;
+    midtermWeight: number;
+    finalsWeight: number;
+    generalWeight: number;
 }>();
 
 defineOptions({
@@ -32,15 +34,16 @@ defineOptions({
     },
 });
 
-const addForm = useForm({ name: '', weight_percentage: '', max_score: '100' });
+const addForm = useForm({ name: '', weight_percentage: '', max_score: '100', period: '' });
 const editingId = ref<number | null>(null);
-const editForm = useForm({ name: '', weight_percentage: '', max_score: '100' });
+const editForm = useForm({ name: '', weight_percentage: '', max_score: '100', period: '' });
 
 function startEdit(comp: Component) {
     editingId.value = comp.id;
     editForm.name = comp.name;
     editForm.weight_percentage = comp.weight_percentage.toString();
     editForm.max_score = String(comp.max_score ?? 100);
+    editForm.period = comp.period ?? '';
 }
 
 function cancelEdit() {
@@ -70,8 +73,12 @@ function toggleLock(id: number) {
     router.post(`/components/${id}/toggle-lock`);
 }
 
-const remaining = (100 - props.totalWeight).toFixed(2);
-const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
+const hasMidterm = computed(() => props.components.some(c => c.period === 'midterm'));
+const hasFinals  = computed(() => props.components.some(c => c.period === 'finals'));
+const hasGeneral = computed(() => props.components.some(c => !c.period));
+
+function weightComplete(w: number) { return Math.abs(w - 100) < 0.01; }
+function weightRemaining(w: number) { return (100 - w).toFixed(2); }
 </script>
 
 <template>
@@ -95,28 +102,86 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
             </div>
         </div>
 
-        <!-- Weight progress -->
-        <div class="rounded-xl border p-4 space-y-2">
-            <div class="flex justify-between text-sm">
-                <span class="font-medium">Total Weight</span>
-                <span :class="isComplete ? 'text-green-600 font-semibold' : 'text-orange-500'">
-                    {{ totalWeight.toFixed(2) }}% / 100%
-                </span>
-            </div>
-            <div class="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                    class="h-full rounded-full transition-all"
-                    :class="isComplete ? 'bg-green-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-primary'"
-                    :style="{ width: `${Math.min(totalWeight, 100)}%` }"
-                />
-            </div>
-            <p v-if="!isComplete && totalWeight < 100" class="flex items-center gap-1.5 text-xs text-orange-500">
-                <AlertTriangle class="h-3.5 w-3.5" />
-                {{ remaining }}% remaining — final grades won't compute until total = 100%
+        <!-- Weight progress — one bar per active period group -->
+        <div class="rounded-xl border p-4 space-y-4">
+            <p class="text-sm font-medium">Grade Weights</p>
+            <p class="text-xs text-muted-foreground -mt-2">
+                Each period (Midterm / Finals) is an independent 100% grading sheet.
+                General components share their own 100%.
             </p>
-            <p v-else-if="isComplete" class="flex items-center gap-1.5 text-xs text-green-600">
-                <Check class="h-3.5 w-3.5" />
-                Weights are complete. Final grades will be computed correctly.
+
+            <!-- Midterm -->
+            <div v-if="hasMidterm" class="space-y-1.5">
+                <div class="flex justify-between text-sm">
+                    <span class="font-medium text-blue-600">Midterm</span>
+                    <span :class="weightComplete(midtermWeight) ? 'text-green-600 font-semibold' : 'text-orange-500'">
+                        {{ midtermWeight.toFixed(2) }}% / 100%
+                    </span>
+                </div>
+                <div class="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                        class="h-full rounded-full transition-all"
+                        :class="weightComplete(midtermWeight) ? 'bg-green-500' : midtermWeight > 100 ? 'bg-red-500' : 'bg-blue-500'"
+                        :style="{ width: `${Math.min(midtermWeight, 100)}%` }"
+                    />
+                </div>
+                <p v-if="!weightComplete(midtermWeight)" class="flex items-center gap-1 text-xs text-orange-500">
+                    <AlertTriangle class="h-3 w-3" />{{ weightRemaining(midtermWeight) }}% remaining
+                </p>
+                <p v-else class="flex items-center gap-1 text-xs text-green-600">
+                    <Check class="h-3 w-3" />Complete
+                </p>
+            </div>
+
+            <!-- Finals -->
+            <div v-if="hasFinals" class="space-y-1.5">
+                <div class="flex justify-between text-sm">
+                    <span class="font-medium text-purple-600">Finals</span>
+                    <span :class="weightComplete(finalsWeight) ? 'text-green-600 font-semibold' : 'text-orange-500'">
+                        {{ finalsWeight.toFixed(2) }}% / 100%
+                    </span>
+                </div>
+                <div class="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                        class="h-full rounded-full transition-all"
+                        :class="weightComplete(finalsWeight) ? 'bg-green-500' : finalsWeight > 100 ? 'bg-red-500' : 'bg-purple-500'"
+                        :style="{ width: `${Math.min(finalsWeight, 100)}%` }"
+                    />
+                </div>
+                <p v-if="!weightComplete(finalsWeight)" class="flex items-center gap-1 text-xs text-orange-500">
+                    <AlertTriangle class="h-3 w-3" />{{ weightRemaining(finalsWeight) }}% remaining
+                </p>
+                <p v-else class="flex items-center gap-1 text-xs text-green-600">
+                    <Check class="h-3 w-3" />Complete
+                </p>
+            </div>
+
+            <!-- General (no period) -->
+            <div v-if="hasGeneral" class="space-y-1.5">
+                <div class="flex justify-between text-sm">
+                    <span class="font-medium text-muted-foreground">General</span>
+                    <span :class="weightComplete(generalWeight) ? 'text-green-600 font-semibold' : 'text-orange-500'">
+                        {{ generalWeight.toFixed(2) }}% / 100%
+                    </span>
+                </div>
+                <div class="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                        class="h-full rounded-full transition-all"
+                        :class="weightComplete(generalWeight) ? 'bg-green-500' : generalWeight > 100 ? 'bg-red-500' : 'bg-primary'"
+                        :style="{ width: `${Math.min(generalWeight, 100)}%` }"
+                    />
+                </div>
+                <p v-if="!weightComplete(generalWeight)" class="flex items-center gap-1 text-xs text-orange-500">
+                    <AlertTriangle class="h-3 w-3" />{{ weightRemaining(generalWeight) }}% remaining
+                </p>
+                <p v-else class="flex items-center gap-1 text-xs text-green-600">
+                    <Check class="h-3 w-3" />Complete
+                </p>
+            </div>
+
+            <!-- Empty state -->
+            <p v-if="!hasMidterm && !hasFinals && !hasGeneral" class="text-xs text-muted-foreground">
+                Add components below to start building your grading sheet.
             </p>
         </div>
 
@@ -131,8 +196,8 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
                 :key="comp.id"
                 class="rounded-xl border p-4"
             >
-                <div v-if="editingId === comp.id" class="flex items-end gap-3">
-                    <div class="grid flex-1 gap-1.5">
+                <div v-if="editingId === comp.id" class="flex flex-wrap items-end gap-3">
+                    <div class="grid flex-1 gap-1.5 min-w-32">
                         <Label class="text-xs">Name</Label>
                         <Input v-model="editForm.name" placeholder="e.g. Quizzes" />
                         <InputError :message="editForm.errors.name" />
@@ -147,6 +212,14 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
                         <Input type="number" v-model="editForm.max_score" min="1" step="1" />
                         <InputError :message="editForm.errors.max_score" />
                     </div>
+                    <div class="grid w-28 gap-1.5">
+                        <Label class="text-xs">Period</Label>
+                        <select v-model="editForm.period" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                            <option value="">None</option>
+                            <option value="midterm">Midterm</option>
+                            <option value="finals">Finals</option>
+                        </select>
+                    </div>
                     <div class="flex gap-1.5">
                         <Button size="sm" :disabled="editForm.processing" @click="saveEdit(comp.id)">Save</Button>
                         <Button size="sm" variant="ghost" @click="cancelEdit">Cancel</Button>
@@ -157,10 +230,11 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
                     <div class="flex-1">
                         <div class="flex items-center gap-2">
                             <p class="font-medium">{{ comp.name }}</p>
+                            <Badge v-if="comp.period" variant="outline" class="text-xs capitalize">{{ comp.period }}</Badge>
                             <Badge v-if="comp.is_locked" variant="secondary" class="text-xs">Locked</Badge>
                         </div>
                         <p class="text-sm text-muted-foreground">
-                            {{ comp.weight_percentage }}% weight Â· scores out of {{ comp.max_score }}
+                            {{ comp.weight_percentage }}% weight · scores out of {{ comp.max_score }}
                         </p>
                     </div>
                     <div class="h-2 w-24 overflow-hidden rounded-full bg-muted">
@@ -185,10 +259,10 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
         <!-- Add new component -->
         <div class="rounded-xl border p-4 space-y-3">
             <p class="font-medium text-sm">Add Component</p>
-            <div class="flex items-end gap-3">
-                <div class="grid flex-1 gap-1.5">
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="grid flex-1 gap-1.5 min-w-32">
                     <Label for="name" class="text-xs">Component Name</Label>
-                    <Input id="name" v-model="addForm.name" placeholder="e.g. Quizzes, Assignments, Midterm Exam" />
+                    <Input id="name" v-model="addForm.name" placeholder="e.g. Quizzes, Midterm Exam" />
                     <InputError :message="addForm.errors.name" />
                 </div>
                 <div class="grid w-32 gap-1.5">
@@ -200,6 +274,14 @@ const isComplete = Math.abs(props.totalWeight - 100) < 0.01;
                     <Label for="max" class="text-xs">Max</Label>
                     <Input id="max" type="number" v-model="addForm.max_score" min="1" step="1" placeholder="100" />
                     <InputError :message="addForm.errors.max_score" />
+                </div>
+                <div class="grid w-28 gap-1.5">
+                    <Label class="text-xs">Period</Label>
+                    <select v-model="addForm.period" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                        <option value="">None</option>
+                        <option value="midterm">Midterm</option>
+                        <option value="finals">Finals</option>
+                    </select>
                 </div>
                 <Button :disabled="addForm.processing" @click="addComponent">
                     <Plus class="mr-1.5 h-4 w-4" />

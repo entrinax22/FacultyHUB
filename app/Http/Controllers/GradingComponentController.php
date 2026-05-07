@@ -14,31 +14,38 @@ class GradingComponentController extends Controller
     public function index(Section $section): Response
     {
         $section->load(['subject', 'semester']);
-        $components = $section->gradingComponents()->get();
-        $totalWeight = $components->sum('weight_percentage');
+        $components = $section->gradingComponents()->orderBy('order')->get();
 
         return Inertia::render('class-record/Components', [
-            'section' => $section,
-            'components' => $components,
-            'totalWeight' => $totalWeight,
+            'section'        => $section,
+            'components'     => $components,
+            'midtermWeight'  => $components->where('period', 'midterm')->sum('weight_percentage'),
+            'finalsWeight'   => $components->where('period', 'finals')->sum('weight_percentage'),
+            'generalWeight'  => $components->whereNull('period')->sum('weight_percentage'),
         ]);
     }
 
     public function store(Request $request, Section $section): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100',
+            'name'             => 'required|string|max:100',
             'weight_percentage' => 'required|numeric|min:0.01|max:100',
-            'max_score' => 'required|numeric|min:1|max:100000',
+            'max_score'        => 'required|numeric|min:1|max:100000',
+            'period'           => 'nullable|in:midterm,finals',
         ]);
 
-        $current = $section->gradingComponents()->sum('weight_percentage');
+        $period  = $validated['period'] ?? null;
+        $current = $section->gradingComponents()
+            ->where('period', $period)
+            ->sum('weight_percentage');
+
         if ($current + $validated['weight_percentage'] > 100.01) {
-            return back()->withErrors(['weight_percentage' => 'Total weight cannot exceed 100%. Currently used: '.$current.'%.']);
+            $group = $period ? ucfirst($period) : 'General';
+            return back()->withErrors(['weight_percentage' =>
+                "{$group} weights cannot exceed 100%. Currently used: {$current}%."]);
         }
 
         $order = $section->gradingComponents()->max('order') + 1;
-
         $section->gradingComponents()->create([...$validated, 'order' => $order]);
 
         return back()->with('success', 'Component added.');
@@ -47,17 +54,22 @@ class GradingComponentController extends Controller
     public function update(Request $request, GradingComponent $component): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100',
+            'name'             => 'required|string|max:100',
             'weight_percentage' => 'required|numeric|min:0.01|max:100',
-            'max_score' => 'required|numeric|min:1|max:100000',
+            'max_score'        => 'required|numeric|min:1|max:100000',
+            'period'           => 'nullable|in:midterm,finals',
         ]);
 
+        $period = $validated['period'] ?? null;
         $others = $component->section->gradingComponents()
             ->where('id', '!=', $component->id)
+            ->where('period', $period)
             ->sum('weight_percentage');
 
         if ($others + $validated['weight_percentage'] > 100.01) {
-            return back()->withErrors(['weight_percentage' => 'Total weight cannot exceed 100%. Other components use: '.$others.'%.']);
+            $group = $period ? ucfirst($period) : 'General';
+            return back()->withErrors(['weight_percentage' =>
+                "{$group} weights cannot exceed 100%. Other components use: {$others}%."]);
         }
 
         $component->update($validated);

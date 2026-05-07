@@ -8,6 +8,8 @@ type Assignment = {
     id: number;
     title: string;
     type: 'essay' | 'mcq' | 'code';
+    period: 'midterm' | 'finals' | null;
+    category: 'quiz' | 'exam' | 'activity' | 'project' | null;
     due_date: string | null;
     max_score: number;
     is_published: boolean;
@@ -89,7 +91,20 @@ function deleteAssignment(id: number, title: string) {
                 <tbody class="divide-y">
                     <tr v-for="a in assignments" :key="a.id" class="hover:bg-muted/30">
                         <td class="px-4 py-3">
-                            <Link :href="`/assignments/${a.id}`" class="font-medium hover:underline">{{ a.title }}</Link>
+                            <div class="flex flex-col gap-0.5">
+                                <Link :href="`/assignments/${a.id}`" class="font-medium hover:underline">{{ a.title }}</Link>
+                                <div class="flex flex-wrap gap-1">
+                                    <Badge v-if="a.category" variant="outline" class="w-fit text-xs capitalize" :class="{
+                                        'border-violet-400 text-violet-600': a.category === 'quiz',
+                                        'border-red-400 text-red-600': a.category === 'exam',
+                                        'border-green-400 text-green-600': a.category === 'activity',
+                                        'border-orange-400 text-orange-600': a.category === 'project',
+                                    }">{{ a.category }}</Badge>
+                                    <Badge v-if="a.period" variant="outline" class="w-fit text-xs capitalize" :class="a.period === 'midterm' ? 'border-blue-400 text-blue-600' : 'border-amber-400 text-amber-600'">
+                                        {{ a.period }}
+                                    </Badge>
+                                </div>
+                            </div>
                         </td>
                         <td class="px-4 py-3">
                             <Badge :variant="typeVariant[a.type]">{{ typeLabel[a.type] }}</Badge>

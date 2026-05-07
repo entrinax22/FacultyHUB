@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Assignment;
 use App\Models\Enrollment;
 use App\Models\Grade;
 use App\Models\GradingComponent;
@@ -20,8 +21,8 @@ class ClassRecordController extends Controller
     {
         $section->load(['subject', 'semester', 'faculty']);
 
-        $components = $section->gradingComponents()->get();
-        $totalWeight = $components->sum('weight_percentage');
+        $components    = $section->gradingComponents()->orderBy('order')->get();
+        $totalWeight   = $components->sum('weight_percentage');
 
         $items = GradingItem::query()
             ->where('section_id', $section->id)
@@ -36,7 +37,10 @@ class ClassRecordController extends Controller
             ->get()
             ->sortBy('student.last_name');
 
-        $itemIds = $items->pluck('id');
+        $studentIds = $enrollments->pluck('student.id');
+
+        // Grading item scores
+        $itemIds    = $items->pluck('id');
         $itemScores = $itemIds->isEmpty()
             ? collect()
             : GradingItemScore::query()
@@ -45,72 +49,132 @@ class ClassRecordController extends Controller
                 ->get()
                 ->groupBy(fn ($s) => "{$s->student_id}_{$s->grading_item_id}");
 
-        $hasCustomScale = TransmutationScale::where('section_id', $section->id)->exists();
+        // Assignments + their grades
+        $assignments = Assignment::where('section_id', $section->id)
+            ->where('is_published', true)
+            ->orderBy('created_at')
+            ->get(['id', 'title', 'max_score', 'type']);
 
+        $assignmentGrades = $assignments->isEmpty() || $studentIds->isEmpty()
+            ? collect()
+            : Grade::where('section_id', $section->id)
+                ->whereNotNull('assignment_id')
+                ->whereIn('student_id', $studentIds)
+                ->get()
+                ->groupBy(fn ($g) => "{$g->student_id}_{$g->assignment_id}");
+
+        $hasCustomScale  = TransmutationScale::where('section_id', $section->id)->exists();
         $itemsByComponent = $items->groupBy('component_id');
 
-        $rows = $enrollments->map(function ($enrollment) use ($components, $itemsByComponent, $items, $itemScores, $section) {
+        // Helper: compute weighted percentage for a set of components
+        $computePeriodGrade = function ($periodComponents) use ($itemsByComponent, &$scores) {
+            $wSum   = 0;
+            $wTotal = 0;
+            foreach ($periodComponents as $comp) {
+                $compItems = $itemsByComponent->get($comp->id, collect());
+                if ($compItems->isEmpty()) continue;
+                $raw = 0; $max = 0; $hasScore = false;
+                foreach ($compItems as $item) {
+                    $max += $item->max_score;
+                    $val  = $scores[$item->id] ?? null;
+                    if ($val !== null) { $hasScore = true; $raw += $val; }
+                }
+                if (! $hasScore || $max <= 0) continue;
+                $wSum   += (($raw / $max) * 100 / 100) * $comp->weight_percentage;
+                $wTotal += $comp->weight_percentage;
+            }
+            return $wTotal > 0 ? round(($wSum / $wTotal) * 100, 2) : null;
+        };
+
+        $midtermComponents = $components->where('period', 'midterm');
+        $finalsComponents  = $components->where('period', 'finals');
+
+        $rows = $enrollments->map(function ($enrollment) use (
+            $components, $itemsByComponent, $items, $itemScores,
+            $assignments, $assignmentGrades, $section,
+            $midtermComponents, $finalsComponents, $computePeriodGrade
+        ) {
             $student = $enrollment->student;
-            $weightedSum = 0;
-            $totalWeight = 0;
-            $scores = [];
+            $scores  = [];
 
             foreach ($items as $item) {
-                $key = "{$student->id}_{$item->id}";
-                $score = $itemScores->get($key)?->first()?->score;
-                $scores[$item->id] = $score;
+                $key           = "{$student->id}_{$item->id}";
+                $scores[$item->id] = $itemScores->get($key)?->first()?->score;
             }
 
-            foreach ($components as $comp) {
-                $compItems = $itemsByComponent->get($comp->id, collect());
-                if ($compItems->isEmpty()) {
-                    continue;
-                }
-
-                $componentHasAnyScore = false;
-                $componentRaw = 0;
-                $componentMax = 0;
-
-                foreach ($compItems as $item) {
-                    $componentMax += $item->max_score;
-                    $val = $scores[$item->id] ?? null;
-                    if ($val !== null) {
-                        $componentHasAnyScore = true;
-                        $componentRaw += $val;
-                    }
-                }
-
-                if (! $componentHasAnyScore || $componentMax <= 0) {
-                    continue;
-                }
-
-                $componentPercent = ($componentRaw / $componentMax) * 100;
-                $weightedSum += ($componentPercent / 100) * $comp->weight_percentage;
-                $totalWeight += $comp->weight_percentage;
-            }
-
-            $finalGrade = $totalWeight > 0 ? round(($weightedSum / $totalWeight) * 100, 2) : null;
-            $transmuted = $finalGrade !== null
-                ? TransmutationScale::transmute($finalGrade, $section->id)
+            // Midterm / Finals / Total
+            $midtermGrade = $midtermComponents->isNotEmpty()
+                ? $computePeriodGrade($midtermComponents)
                 : null;
 
+            $finalsGrade = $finalsComponents->isNotEmpty()
+                ? $computePeriodGrade($finalsComponents)
+                : null;
+
+            if ($midtermGrade !== null && $finalsGrade !== null) {
+                $totalGrade = round(($midtermGrade + $finalsGrade) / 2, 2);
+            } elseif ($midtermGrade !== null || $finalsGrade !== null) {
+                $totalGrade = $midtermGrade ?? $finalsGrade;
+            } else {
+                // No period tags — fall back to overall weighted sum
+                $wSum = 0; $wTotal = 0;
+                foreach ($components as $comp) {
+                    $compItems = $itemsByComponent->get($comp->id, collect());
+                    if ($compItems->isEmpty()) continue;
+                    $raw = 0; $max = 0; $hasScore = false;
+                    foreach ($compItems as $item) {
+                        $max += $item->max_score;
+                        $val  = $scores[$item->id] ?? null;
+                        if ($val !== null) { $hasScore = true; $raw += $val; }
+                    }
+                    if (! $hasScore || $max <= 0) continue;
+                    $wSum   += (($raw / $max) * 100 / 100) * $comp->weight_percentage;
+                    $wTotal += $comp->weight_percentage;
+                }
+                $totalGrade = $wTotal > 0 ? round(($wSum / $wTotal) * 100, 2) : null;
+            }
+
+            $finalGrade = $totalGrade !== null
+                ? TransmutationScale::transmute($totalGrade, $section->id)
+                : null;
+
+            // Assignment grades for this student
+            $studentAssignmentGrades = [];
+            foreach ($assignments as $a) {
+                $key   = "{$student->id}_{$a->id}";
+                $grade = $assignmentGrades->get($key)?->first();
+                $studentAssignmentGrades[$a->id] = $grade ? [
+                    'score'    => $grade->raw_score,
+                    'max'      => $grade->max_score,
+                    'pct'      => $grade->max_score > 0
+                        ? round(($grade->raw_score / $grade->max_score) * 100, 1) : 0,
+                    'released' => $grade->is_released,
+                ] : null;
+            }
+
             return [
-                'student' => $student,
-                'enrollment_id' => $enrollment->id,
-                'scores' => $scores,
-                'final_grade' => $finalGrade,
-                'transmuted' => $transmuted,
+                'student'           => $student,
+                'enrollment_id'     => $enrollment->id,
+                'scores'            => $scores,
+                'assignment_grades' => $studentAssignmentGrades,
+                'midterm_grade'     => $midtermGrade,
+                'finals_grade'      => $finalsGrade,
+                'total_grade'       => $totalGrade,
+                'final_grade'       => $finalGrade,
             ];
         })->values();
 
         return Inertia::render('class-record/Index', [
-            'section' => $section,
-            'components' => $components,
-            'items' => $items,
-            'totalWeight' => $totalWeight,
-            'rows' => $rows,
+            'section'       => $section,
+            'components'    => $components,
+            'items'         => $items,
+            'assignments'   => $assignments,
+            'midtermWeight' => $components->where('period', 'midterm')->sum('weight_percentage'),
+            'finalsWeight'  => $components->where('period', 'finals')->sum('weight_percentage'),
+            'generalWeight' => $components->whereNull('period')->sum('weight_percentage'),
+            'rows'          => $rows,
             'hasCustomScale' => $hasCustomScale,
-            'defaultScale' => TransmutationScale::defaultScale(),
+            'defaultScale'  => TransmutationScale::defaultScale(),
         ]);
     }
 

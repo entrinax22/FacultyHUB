@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\GradingComponent;
+use App\Models\GradingItem;
 
 class Assignment extends Model
 {
     protected $fillable = [
-        'section_id', 'module_id', 'title', 'instructions', 'type',
+        'section_id', 'module_id', 'component_id', 'period', 'category', 'title', 'instructions', 'type',
         'due_date', 'max_score', 'passing_score', 'is_published',
         'rubric', 'language', 'answer_release_at',
     ];
@@ -28,6 +30,16 @@ class Assignment extends Model
     public function module()
     {
         return $this->belongsTo(Module::class);
+    }
+
+    public function component()
+    {
+        return $this->belongsTo(GradingComponent::class, 'component_id');
+    }
+
+    public function gradingItem()
+    {
+        return $this->hasOne(GradingItem::class);
     }
 
     public function questions()

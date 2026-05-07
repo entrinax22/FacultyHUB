@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ResolvesStudent;
 use App\Jobs\GradeCodeJob;
 use App\Jobs\GradeEssayJob;
 use App\Models\Assignment;
@@ -14,13 +15,11 @@ use Inertia\Response;
 
 class SubmissionController extends Controller
 {
+    use ResolvesStudent;
+
     public function create(Request $request, Assignment $assignment): Response
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         if (! $assignment->is_published) {
             abort(404);
@@ -40,11 +39,7 @@ class SubmissionController extends Controller
 
     public function store(Request $request, Assignment $assignment): RedirectResponse
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         if (! $assignment->is_published) {
             abort(404);
@@ -158,11 +153,7 @@ class SubmissionController extends Controller
 
     public function studentAssignments(Request $request, \App\Models\Section $section): Response
     {
-        $student = $request->user()->student;
-
-        if (! $student) {
-            abort(403);
-        }
+        $student = $this->resolveStudent($request);
 
         $section->load(['subject', 'semester']);
 
