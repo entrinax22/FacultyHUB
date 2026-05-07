@@ -5,22 +5,19 @@ services:
       runtime: docker
       plan: free
       healthCheckPath: /up
-      healthCheckInterval: 30
-      healthCheckTimeout: 5
-      healthCheckStartupFailureThreshold: 30
       envVars:
           - key: APP_NAME
             value: FacultyHUB
           - key: APP_ENV
             value: production
           - key: APP_DEBUG
-            value: false
+            value: "false"
           - key: APP_KEY
             generateValue: true
           - key: APP_URL
             value: https://facultyhub-e1pj.onrender.com
 
-          # Database — use the Render PostgreSQL values below
+          # Database
           - key: DB_CONNECTION
             value: pgsql
           - key: DB_HOST
@@ -44,17 +41,19 @@ services:
                 name: facultyhub-db
                 property: password
 
-          # Session / Cache / Queue — all use database driver
+          # Session / Cache
           - key: SESSION_DRIVER
             value: database
           - key: SESSION_ENCRYPT
-            value: true
+            value: "true"
           - key: CACHE_STORE
             value: database
-          - key: QUEUE_CONNECTION
-            value: database
 
-          # Storage — S3 / Cloudflare R2 (add keys in Render dashboard)
+          # Queue — sync: jobs run immediately in the same request (no worker needed)
+          - key: QUEUE_CONNECTION
+            value: sync
+
+          # Storage — S3 / Cloudflare R2
           - key: FILESYSTEM_DISK
             value: s3
           - key: AWS_ACCESS_KEY_ID
@@ -68,7 +67,7 @@ services:
           - key: AWS_ENDPOINT
             sync: false
           - key: AWS_USE_PATH_STYLE_ENDPOINT
-            value: true
+            value: "true"
           - key: AWS_URL
             sync: false
 
@@ -76,73 +75,10 @@ services:
           - key: GEMINI_API_KEY
             sync: false
 
-          # Mail
           - key: MAIL_MAILER
             value: log
-
           - key: LOG_LEVEL
             value: error
-
-    # ── Queue Runner (Cron — free plan alternative to a persistent worker) ───────
-    - type: cron
-      name: facultyhub-queue-runner
-      runtime: docker
-      schedule: "* * * * *"
-      dockerCommand: php artisan queue:work --stop-when-empty --tries=3 --timeout=110
-      envVars:
-          - key: APP_NAME
-            value: FacultyHUB
-          - key: APP_ENV
-            value: production
-          - key: APP_DEBUG
-            value: false
-          - key: APP_KEY
-            fromService:
-                name: facultyhub-web
-                type: web
-                envVarKey: APP_KEY
-          - key: DB_CONNECTION
-            value: pgsql
-          - key: DB_HOST
-            fromDatabase:
-                name: facultyhub-db
-                property: host
-          - key: DB_PORT
-            fromDatabase:
-                name: facultyhub-db
-                property: port
-          - key: DB_DATABASE
-            fromDatabase:
-                name: facultyhub-db
-                property: database
-          - key: DB_USERNAME
-            fromDatabase:
-                name: facultyhub-db
-                property: user
-          - key: DB_PASSWORD
-            fromDatabase:
-                name: facultyhub-db
-                property: password
-          - key: QUEUE_CONNECTION
-            value: database
-          - key: FILESYSTEM_DISK
-            value: s3
-          - key: AWS_ACCESS_KEY_ID
-            sync: false
-          - key: AWS_SECRET_ACCESS_KEY
-            sync: false
-          - key: AWS_DEFAULT_REGION
-            value: auto
-          - key: AWS_BUCKET
-            sync: false
-          - key: AWS_ENDPOINT
-            sync: false
-          - key: AWS_USE_PATH_STYLE_ENDPOINT
-            value: true
-          - key: AWS_URL
-            sync: false
-          - key: GEMINI_API_KEY
-            sync: false
 
 # ── PostgreSQL Database ───────────────────────────────────────────────────────
 databases:
