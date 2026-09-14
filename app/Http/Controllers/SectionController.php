@@ -20,8 +20,17 @@ class SectionController extends Controller
             $query->where('faculty_id', $request->user()->id);
         }
 
+        $semesters = Semester::orderByDesc('is_active')->latest()->get(['id', 'name', 'school_year', 'is_active']);
+        $semesterId = $request->integer('semester_id') ?: Semester::getActive()?->id;
+
+        if ($semesterId) {
+            $query->where('semester_id', $semesterId);
+        }
+
         return Inertia::render('sections/Index', [
             'sections' => $query->latest()->get(),
+            'semesters' => $semesters,
+            'selectedSemesterId' => $semesterId,
         ]);
     }
 

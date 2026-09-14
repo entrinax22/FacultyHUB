@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 class Semester extends Model
@@ -22,6 +23,11 @@ class Semester extends Model
     public function enrollments()
     {
         return $this->hasMany(Enrollment::class);
+    }
+
+    protected function serializeDate(DateTimeInterface $date): string
+    {
+        return $date->format('Y-m-d');
     }
 
     public static function getActive(): ?self

@@ -153,11 +153,11 @@ function getStudentChoice(questionId: number): number | null {
                     <div
                         v-for="c in q.choices"
                         :key="c.id"
-                        class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm border"
+                        class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100"
                         :class="{
-                            'bg-green-50 border-green-200': answersReleased && c.is_correct,
-                            'bg-red-50 border-red-200': answersReleased && getStudentChoice(q.id) === c.id && !c.is_correct,
-                            'bg-primary/5 border-primary/30': !answersReleased && getStudentChoice(q.id) === c.id,
+                            'bg-green-50 border-green-200 text-green-900 dark:bg-green-950 dark:border-green-800 dark:text-green-100': answersReleased && c.is_correct,
+                            'bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100': answersReleased && getStudentChoice(q.id) === c.id && !c.is_correct,
+                            'bg-primary/5 border-primary/30 text-slate-900 dark:text-slate-100': !answersReleased && getStudentChoice(q.id) === c.id,
                         }"
                     >
                         <span class="text-xs w-4">{{ getStudentChoice(q.id) === c.id ? '►' : ' ' }}</span>

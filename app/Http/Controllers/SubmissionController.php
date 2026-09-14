@@ -8,8 +8,10 @@ use App\Jobs\GradeEssayJob;
 use App\Models\Assignment;
 use App\Models\Grade;
 use App\Models\Submission;
+use App\Models\ProctoringEvent;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,10 +33,86 @@ class SubmissionController extends Controller
 
         $assignment->load(['section.subject', 'section.semester', 'questions.choices']);
 
+        $isMonitoredExam = $assignment->isMonitoredExam();
+
+        if ($isMonitoredExam && ! $existing?->terms_accepted_at) {
+            $assignment->setRelation('questions', collect());
+        }
+
         return Inertia::render('student/SubmitAssignment', [
             'assignment' => $assignment,
             'existing' => $existing,
+            'exam' => $isMonitoredExam ? [
+                'duration_minutes' => $assignment->duration_minutes,
+                'started_at' => $existing?->started_at?->toIso8601String(),
+                'expires_at' => $existing?->expires_at?->toIso8601String(),
+                'terms_accepted_at' => $existing?->terms_accepted_at?->toIso8601String(),
+                'proctoring_enabled' => $assignment->proctoring_enabled,
+            ] : null,
         ]);
+    }
+
+    public function startExam(Request $request, Assignment $assignment): RedirectResponse
+    {
+        $student = $this->resolveStudent($request);
+
+        abort_unless($assignment->is_published && $assignment->isMonitoredExam(), 404);
+
+        $validated = $request->validate(['terms_accepted' => ['required', 'accepted']]);
+
+        $submission = Submission::firstOrCreate(
+            ['assignment_id' => $assignment->id, 'student_id' => $student->id],
+            ['status' => 'pending']
+        );
+
+        if ($submission->isApproved()) {
+            return back()->withErrors(['exam' => 'This exam attempt is already submitted.']);
+        }
+
+        if (! $submission->started_at) {
+            $startedAt = now();
+            $submission->update([
+                'started_at' => $startedAt,
+                'expires_at' => $assignment->duration_minutes ? $startedAt->copy()->addMinutes($assignment->duration_minutes) : null,
+                'terms_accepted_at' => now(),
+            ]);
+
+            $submission->proctoringEvents()->create([
+                'event_type' => 'exam_started',
+                'metadata' => [
+                    'user_agent' => substr((string) $request->userAgent(), 0, 500),
+                    'ip_hash' => hash('sha256', (string) $request->ip()),
+                ],
+            ]);
+        }
+
+        return back()->with('success', 'Exam started. Your attempt is being monitored.');
+    }
+
+    public function recordProctoringEvent(Request $request, Submission $submission): JsonResponse
+    {
+        $student = $this->resolveStudent($request);
+
+        abort_unless($submission->student_id === $student->id, 403);
+
+        abort_unless($submission->isActiveExamAttempt(), 422, 'This exam attempt is not active.');
+
+        $validated = $request->validate([
+            'events' => ['nullable', 'array', 'max:20'],
+            'events.*.event_type' => ['required_with:events', 'in:heartbeat,tab_hidden,tab_visible,window_resized,fullscreen_entered,fullscreen_exited,copy_detected,paste_detected,cut_detected,context_menu_used,print_screen_suspected,camera_permission_denied'],
+            'events.*.metadata' => ['nullable', 'array'],
+            'event_type' => ['nullable', 'in:heartbeat,tab_hidden,tab_visible,window_resized,fullscreen_entered,fullscreen_exited,copy_detected,paste_detected,cut_detected,context_menu_used,print_screen_suspected,camera_permission_denied'],
+            'metadata' => ['nullable', 'array'],
+        ]);
+
+        $events = $validated['events'] ?? [[
+            'event_type' => $validated['event_type'],
+            'metadata' => $validated['metadata'] ?? [],
+        ]];
+
+        $submission->proctoringEvents()->createMany($events);
+
+        return response()->json(['stored' => count($events)], 201);
     }
 
     public function store(Request $request, Assignment $assignment): RedirectResponse
@@ -45,13 +123,23 @@ class SubmissionController extends Controller
             abort(404);
         }
 
+        $existing = Submission::where('assignment_id', $assignment->id)
+            ->where('student_id', $student->id)
+            ->first();
+
         if ($assignment->isPastDue()) {
             return back()->withErrors(['due_date' => 'This assignment is past its due date.']);
         }
 
-        $existing = Submission::where('assignment_id', $assignment->id)
-            ->where('student_id', $student->id)
-            ->first();
+        if ($assignment->isMonitoredExam()) {
+            if (! $existing?->started_at) {
+                return back()->withErrors(['exam' => 'Start the exam before submitting your answers.']);
+            }
+
+            if ($existing->expires_at && now()->greaterThan($existing->expires_at)) {
+                return back()->withErrors(['exam' => 'Your exam time has expired.']);
+            }
+        }
 
         if ($existing && $existing->isApproved()) {
             return back()->withErrors(['submission' => 'Your submission has already been graded and approved.']);

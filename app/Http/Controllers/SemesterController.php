@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Semester;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,7 +28,7 @@ class SemesterController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', Rule::in(['1st Semester', '2nd Semester', 'Summer'])],
             'school_year' => 'required|string|max:20',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
@@ -48,7 +49,7 @@ class SemesterController extends Controller
     public function update(Request $request, Semester $semester): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', Rule::in(['1st Semester', '2nd Semester', 'Summer'])],
             'school_year' => 'required|string|max:20',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',

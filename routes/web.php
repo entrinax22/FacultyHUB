@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AiSettingsController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AttendanceRecordController;
 use App\Http\Controllers\AttendanceSessionController;
@@ -57,6 +58,7 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
     // Assignments
     Route::get('sections/{section}/assignments', [AssignmentController::class, 'index'])->name('sections.assignments.index');
     Route::get('sections/{section}/assignments/create', [AssignmentController::class, 'create'])->name('sections.assignments.create');
+    Route::post('sections/{section}/assignments/import-pdf', [AssignmentController::class, 'importPdf'])->middleware('throttle:uploads')->name('sections.assignments.import-pdf');
     Route::post('sections/{section}/assignments', [AssignmentController::class, 'store'])->name('sections.assignments.store');
     Route::get('assignments/{assignment}', [AssignmentController::class, 'show'])->name('assignments.show');
     Route::get('assignments/{assignment}/edit', [AssignmentController::class, 'edit'])->name('assignments.edit');
@@ -126,7 +128,9 @@ Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
     Route::get('my-sections/{section}/grades', [StudentModuleController::class, 'grades'])->name('student.grades');
     Route::get('my-sections/{section}/assignments', [SubmissionController::class, 'studentAssignments'])->name('student.submissions');
     Route::get('assignments/{assignment}/submit', [SubmissionController::class, 'create'])->name('assignments.submit');
+    Route::post('assignments/{assignment}/start', [SubmissionController::class, 'startExam'])->name('assignments.start');
     Route::post('assignments/{assignment}/submit', [SubmissionController::class, 'store'])->middleware('throttle:ai')->name('assignments.submit.store');
+    Route::post('submissions/{submission}/proctoring-events', [SubmissionController::class, 'recordProctoringEvent'])->name('submissions.proctoring-events');
     Route::get('submissions/{submission}', [SubmissionController::class, 'show'])->name('submissions.show');
 });
 
@@ -136,6 +140,11 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     Route::get('users', [AdminController::class, 'users'])->name('users');
     Route::put('users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
     Route::get('reports', [AdminController::class, 'reports'])->name('reports');
+    Route::get('ai-settings', [AiSettingsController::class, 'edit'])->name('ai-settings.edit');
+    Route::put('ai-settings', [AiSettingsController::class, 'update'])->name('ai-settings.update');
+    Route::put('ai-settings/providers/{provider}', [AiSettingsController::class, 'updateProvider'])->name('ai-settings.providers.update');
+    Route::post('ai-settings/providers/{provider}/toggle', [AiSettingsController::class, 'toggleProvider'])->name('ai-settings.providers.toggle');
+    Route::post('ai-settings/providers/{provider}/check', [AiSettingsController::class, 'checkProvider'])->name('ai-settings.providers.check');
 
     // Semesters — admin only
     Route::resource('semesters', SemesterController::class);

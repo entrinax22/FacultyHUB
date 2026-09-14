@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { Plus, Pencil, Trash2, Users, BookOpen } from 'lucide-vue-next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type Section = {
     id: number;
@@ -14,8 +15,9 @@ type Section = {
     subject: { id: number; code: string; name: string };
     faculty: { id: number; name: string };
 };
+type Semester = { id: number; name: string; school_year: string; is_active: boolean };
 
-defineProps<{ sections: Section[] }>();
+const props = defineProps<{ sections: Section[]; semesters: Semester[]; selectedSemesterId: number | null }>();
 
 defineOptions({
     layout: {
@@ -31,23 +33,44 @@ function deleteSection(id: number) {
         router.delete(`/sections/${id}`);
     }
 }
+
+function changeSemester(value: unknown) {
+    if (typeof value !== 'string') {
+        return;
+    }
+
+    router.get('/sections', { semester_id: value }, { preserveState: true, replace: true });
+}
 </script>
 
 <template>
     <Head title="Sections" />
 
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-semibold">Sections</h1>
                 <p class="text-sm text-muted-foreground">Manage class sections per semester</p>
             </div>
-            <Button as-child>
-                <Link href="/sections/create">
-                    <Plus class="mr-2 h-4 w-4" />
-                    New Section
-                </Link>
-            </Button>
+            <div class="flex items-center gap-3">
+                <Select :model-value="props.selectedSemesterId?.toString() ?? ''" @update:model-value="changeSemester">
+                    <SelectTrigger class="w-56">
+                        <SelectValue placeholder="Select semester" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem v-for="semester in props.semesters" :key="semester.id" :value="semester.id.toString()">
+                            {{ semester.name }} {{ semester.school_year }}
+                            <span v-if="semester.is_active" class="ml-1 text-xs text-green-600">(Active)</span>
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
+                <Button as-child>
+                    <Link href="/sections/create">
+                        <Plus class="mr-2 h-4 w-4" />
+                        New Section
+                    </Link>
+                </Button>
+            </div>
         </div>
 
         <div v-if="sections.length === 0" class="rounded-xl border border-dashed p-12 text-center text-muted-foreground">

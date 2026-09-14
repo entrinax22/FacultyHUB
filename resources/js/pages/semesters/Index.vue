@@ -25,6 +25,22 @@ defineOptions({
     },
 });
 
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+});
+
+function formatDate(value: string) {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return dateFormatter.format(date);
+}
+
 function setActive(id: number) {
     router.post(`/admin/semesters/${id}/set-active`);
 }
@@ -69,7 +85,7 @@ function deleteSemester(id: number) {
                     <p class="text-sm text-muted-foreground">{{ semester.school_year }}</p>
                     <div class="flex items-center gap-1 text-xs text-muted-foreground">
                         <CalendarDays class="h-3.5 w-3.5" />
-                        {{ semester.start_date }} — {{ semester.end_date }}
+                        {{ formatDate(semester.start_date) }} - {{ formatDate(semester.end_date) }}
                     </div>
                     <div class="flex items-center gap-2 pt-2">
                         <Button

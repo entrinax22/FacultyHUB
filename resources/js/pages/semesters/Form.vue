@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import InputError from '@/components/InputError.vue';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 type Semester = {
     id: number;
@@ -31,6 +38,8 @@ const form = useForm({
     start_date: props.semester?.start_date ?? '',
     end_date: props.semester?.end_date ?? '',
 });
+
+const semesterNames = ['1st Semester', '2nd Semester', 'Summer'];
 
 function submit() {
     if (props.semester) {
@@ -59,14 +68,23 @@ function submit() {
         <!-- Form card -->
         <form @submit.prevent="submit" class="max-w-xl rounded-xl border bg-card p-6 shadow-sm space-y-5">
             <div class="grid gap-1.5">
-                <Label for="name">Semester Name</Label>
-                <Input id="name" v-model="form.name" placeholder="e.g. 1st Semester" required />
+                <Label>Semester Name</Label>
+                <Select v-model="form.name" required>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select semester" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem v-for="name in semesterNames" :key="name" :value="name">
+                            {{ name }}
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
                 <InputError :message="form.errors.name" />
             </div>
 
             <div class="grid gap-1.5">
                 <Label for="school_year">School Year</Label>
-                <Input id="school_year" v-model="form.school_year" placeholder="e.g. 2025–2026" required />
+                <Input id="school_year" v-model="form.school_year" placeholder="e.g. 2025-2026" maxlength="20" required />
                 <InputError :message="form.errors.school_year" />
             </div>
 

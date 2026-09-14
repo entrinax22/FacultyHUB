@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { CheckCircle2, Clock, AlertTriangle, BarChart2, Loader2, ArrowLeft } from 'lucide-vue-next';
+import { BarChart2, CheckCircle2, Loader2 } from 'lucide-vue-next';
+import { ref } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 type Grade = { raw_score: number; max_score: number; is_released: boolean };
 type AiFeedback = { score: number };
+type ProctoringEvent = { id: number; event_type: string; metadata: Record<string, string | number | boolean> | null; created_at: string };
 type Submission = {
     id: number;
     status: string;
@@ -13,6 +15,9 @@ type Submission = {
     student: { id: number; student_no: string; first_name: string; last_name: string };
     grade: Grade | null;
     ai_feedback: AiFeedback | null;
+    proctoring_events: ProctoringEvent[];
+    proctoring_events_count: number;
+    proctoring_alerts_count: number;
 };
 
 type Assignment = {
@@ -54,6 +59,37 @@ function runPlagiarism() {
 
 const approvedCount = props.submissions.filter((s) => s.status === 'approved').length;
 const gradedCount = props.submissions.filter((s) => ['graded', 'approved'].includes(s.status)).length;
+const expandedSubmissionId = ref<number | null>(null);
+
+function toggleAlerts(submissionId: number) {
+    expandedSubmissionId.value = expandedSubmissionId.value === submissionId ? null : submissionId;
+}
+
+function eventLabel(eventType: string) {
+    return {
+        tab_hidden: 'Left exam tab',
+        tab_visible: 'Returned to exam tab',
+        window_resized: 'Window resized',
+        camera_permission_denied: 'Camera permission denied',
+        exam_started: 'Exam started',
+        heartbeat: 'Connection heartbeat',
+        fullscreen_entered: 'Fullscreen enabled',
+        fullscreen_exited: 'Fullscreen exited',
+        copy_detected: 'Content copied',
+        paste_detected: 'Content pasted',
+        cut_detected: 'Content cut',
+        context_menu_used: 'Context menu used',
+        print_screen_suspected: 'Possible screenshot shortcut detected',
+    }[eventType] ?? eventType;
+}
+
+function eventMetadata(event: ProctoringEvent) {
+    if (event.event_type !== 'window_resized' || !event.metadata) {
+        return '';
+    }
+
+    return `${event.metadata.width ?? '?'} × ${event.metadata.height ?? '?'}`;
+}
 </script>
 
 <template>
@@ -141,11 +177,13 @@ const gradedCount = props.submissions.filter((s) => ['graded', 'approved'].inclu
                         <th class="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
                         <th class="px-4 py-3 text-center font-medium text-muted-foreground">AI Score</th>
                         <th class="px-4 py-3 text-center font-medium text-muted-foreground">Final Score</th>
+                        <th class="px-4 py-3 text-center font-medium text-muted-foreground">Exam Alerts</th>
                         <th class="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y">
-                    <tr v-for="sub in submissions" :key="sub.id" class="hover:bg-muted/30">
+                    <template v-for="sub in submissions" :key="sub.id">
+                    <tr class="hover:bg-muted/30">
                         <td class="px-4 py-3">
                             <p class="font-medium">{{ sub.student.last_name }}, {{ sub.student.first_name }}</p>
                             <p class="font-mono text-xs text-muted-foreground">{{ sub.student.student_no }}</p>
@@ -169,6 +207,18 @@ const gradedCount = props.submissions.filter((s) => ['graded', 'approved'].inclu
                             </span>
                             <span v-else class="text-muted-foreground">—</span>
                         </td>
+                        <td class="px-4 py-3 text-center">
+                            <Button
+                                v-if="sub.proctoring_alerts_count > 0"
+                                variant="outline"
+                                size="sm"
+                                class="text-amber-700 dark:text-amber-300"
+                                @click="toggleAlerts(sub.id)"
+                            >
+                                {{ sub.proctoring_alerts_count }} alert{{ sub.proctoring_alerts_count === 1 ? '' : 's' }}
+                            </Button>
+                            <span v-else class="text-muted-foreground">None</span>
+                        </td>
                         <td class="px-4 py-3 text-right">
                             <Button variant="outline" size="sm" as-child>
                                 <Link :href="`/submissions/${sub.id}/grade`">
@@ -177,6 +227,26 @@ const gradedCount = props.submissions.filter((s) => ['graded', 'approved'].inclu
                             </Button>
                         </td>
                     </tr>
+                    <tr v-if="expandedSubmissionId === sub.id" :key="`${sub.id}-alerts`">
+                        <td colspan="7" class="bg-amber-50/60 px-4 py-4 dark:bg-amber-950/20">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="font-semibold">Exam activity alerts</p>
+                                    <p class="text-xs text-muted-foreground">Showing the latest recorded events for this student.</p>
+                                </div>
+                                <Badge variant="destructive">{{ sub.proctoring_alerts_count }} alerts</Badge>
+                            </div>
+                            <div class="mt-3 space-y-2">
+                                <div v-for="event in sub.proctoring_events" :key="event.id" class="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                                    <span class="font-medium">{{ eventLabel(event.event_type) }}</span>
+                                    <span v-if="eventMetadata(event)" class="text-xs text-muted-foreground">{{ eventMetadata(event) }}</span>
+                                    <time class="text-xs text-muted-foreground" :datetime="event.created_at">{{ new Date(event.created_at).toLocaleString() }}</time>
+                                </div>
+                                <p v-if="sub.proctoring_events.length === 0" class="text-sm text-muted-foreground">No event details are available.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
         </div>

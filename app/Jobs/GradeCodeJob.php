@@ -41,7 +41,7 @@ class GradeCodeJob implements ShouldQueue
                 'score'         => $result['score'] ?? 0,
                 'feedback_json' => $result,
                 'generated_at'  => now(),
-                'model_used'    => config('services.gemini.model', 'gemini-2.0-flash'),
+                'model_used'    => $ai->modelUsed(),
             ]
         );
 

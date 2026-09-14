@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { CheckCircle, ClipboardList, FileUp, LoaderCircle, Plus, Trash2 } from 'lucide-vue-next';
 import { ref, computed, watch } from 'vue';
-import { Plus, Trash2, CheckCircle, ClipboardList } from 'lucide-vue-next';
+import { toast } from 'vue-sonner';
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import InputError from '@/components/InputError.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type Choice = { id?: number; choice_text: string; is_correct: boolean };
@@ -24,7 +25,16 @@ type Assignment = {
     period: string | null; category: string | null; component_id: number | null;
     due_date: string | null; max_score: number; passing_score: number | null;
     is_published: boolean; rubric: string | null; language: string | null;
-    answer_release_at: string | null; module_id: number | null;
+    answer_release_at: string | null; module_id: number | null; duration_minutes: number | null; proctoring_enabled: boolean;
+    questions: Question[];
+};
+type PdfDraft = {
+    title: string;
+    type: 'essay' | 'mcq' | 'code';
+    category: 'quiz' | 'exam' | 'activity' | 'project' | null;
+    language: string | null;
+    instructions: string;
+    rubric: string;
     questions: Question[];
 };
 
@@ -54,17 +64,24 @@ const form = useForm({
     language: props.assignment?.language ?? 'python',
     answer_release_at: props.assignment?.answer_release_at?.slice(0, 16) ?? '',
     module_id: props.assignment?.module_id?.toString() ?? 'none',
+    duration_minutes: props.assignment?.duration_minutes ?? '',
+    proctoring_enabled: props.assignment?.proctoring_enabled ?? false,
     questions: [] as Question[],
 });
 
 // Reset component when category is cleared
 watch(() => form.category, (val) => {
-    if (val === 'none') form.component_id = 'none';
+    if (val === 'none') {
+form.component_id = 'none';
+}
 });
 
 // Filter components to match the selected period (or show all if no period set)
 const filteredComponents = computed(() => {
-    if (form.period === 'none' || !form.period) return props.components;
+    if (form.period === 'none' || !form.period) {
+return props.components;
+}
+
     return props.components.filter(c => c.period === form.period || c.period === null);
 });
 
@@ -77,6 +94,9 @@ const questions = ref<Question[]>(
         choices: q.choices.map((c) => ({ id: c.id, choice_text: c.choice_text, is_correct: c.is_correct })),
     })) ?? [],
 );
+const pdfInput = ref<HTMLInputElement | null>(null);
+const importingPdf = ref(false);
+const pdfDraft = ref<PdfDraft | null>(null);
 
 function addQuestion() {
     questions.value.push({
@@ -109,15 +129,101 @@ const codeLanguages = ['python', 'javascript', 'java', 'cpp', 'csharp', 'php', '
 
 function submit() {
     form.questions = questions.value;
-    if (form.period === 'none') form.period = '';
-    if (form.category === 'none') form.category = '';
-    if (form.component_id === 'none') form.component_id = '';
-    if (form.module_id === 'none') form.module_id = '';
+
+    form.transform((data) => ({
+        ...data,
+        proctoring_enabled: Boolean(data.proctoring_enabled),
+    }));
+
+    if (form.period === 'none') {
+form.period = '';
+}
+
+    if (form.category === 'none') {
+form.category = '';
+}
+
+    if (form.component_id === 'none') {
+form.component_id = '';
+}
+
+    if (form.module_id === 'none') {
+form.module_id = '';
+}
+
     if (props.assignment) {
         form.put(`/assignments/${props.assignment.id}`);
     } else {
         form.post(`/sections/${props.section.id}/assignments`);
     }
+}
+
+async function importPdf(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+
+    if (!file) {
+return;
+}
+
+    if (file.type !== 'application/pdf') {
+        toast.error('Only PDF files can be uploaded.');
+        input.value = '';
+
+        return;
+    }
+
+    const payload = new FormData();
+    payload.append('document', file);
+    importingPdf.value = true;
+
+    try {
+        const response = await fetch(`/sections/${props.section.id}/assignments/import-pdf`, {
+            method: 'POST',
+            body: payload,
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
+            },
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message ?? 'The PDF could not be processed.');
+        }
+
+        pdfDraft.value = result;
+        toast.success('PDF converted. Review and edit the draft before applying it.');
+    } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'The PDF could not be processed.');
+    } finally {
+        importingPdf.value = false;
+        input.value = '';
+    }
+}
+
+function applyPdfDraft() {
+    if (!pdfDraft.value) {
+return;
+}
+
+    form.title = pdfDraft.value.title;
+
+    if (!props.assignment) {
+        form.type = pdfDraft.value.type;
+    }
+
+    form.category = pdfDraft.value.category ?? 'none';
+    form.instructions = pdfDraft.value.instructions;
+    form.rubric = pdfDraft.value.rubric;
+
+    if (pdfDraft.value.language) {
+        form.language = pdfDraft.value.language;
+    }
+
+    questions.value = pdfDraft.value.questions;
+    pdfDraft.value = null;
+    toast.success('Draft applied. You can continue editing before saving.');
 }
 </script>
 
@@ -185,6 +291,27 @@ function submit() {
                 </div>
             </div>
 
+            <div v-if="form.category === 'exam' || (form.type === 'mcq' && form.proctoring_enabled)" class="grid gap-1.5 max-w-sm">
+                <Label for="duration_minutes">Exam Duration (minutes)</Label>
+                <Input id="duration_minutes" v-model="form.duration_minutes" type="number" min="1" max="600" required />
+                <p class="text-xs text-muted-foreground">The timer starts when each student accepts the exam terms and presses Start Exam.</p>
+                <InputError :message="form.errors.duration_minutes" />
+            </div>
+
+            <label v-if="form.type === 'mcq' || form.category === 'exam'" class="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">
+                <input
+                    id="proctoring_enabled"
+                    v-model="form.proctoring_enabled"
+                    name="proctoring_enabled"
+                    type="checkbox"
+                    class="mt-0.5 size-4 accent-primary"
+                />
+                <span>
+                    <span class="block text-sm font-medium">Enable exam monitoring</span>
+                    <span class="block text-xs text-amber-800">Record tab changes and window resizing during the student attempt.</span>
+                </span>
+            </label>
+
             <!-- Grading Component (shown when a category is selected) -->
             <div v-if="form.category !== 'none' && components.length" class="grid gap-1.5 max-w-sm">
                 <Label>
@@ -247,6 +374,97 @@ function submit() {
                 />
                 <InputError :message="form.errors.instructions" />
             </div>
+
+            <section class="rounded-lg border border-dashed bg-muted/20 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="font-medium">Import from PDF</h2>
+                        <p class="text-sm text-muted-foreground">AI will create a draft for you to review before applying it.</p>
+                    </div>
+                    <Button type="button" variant="outline" :disabled="importingPdf" @click="pdfInput?.click()">
+                        <LoaderCircle v-if="importingPdf" class="mr-2 h-4 w-4 animate-spin" />
+                        <FileUp v-else class="mr-2 h-4 w-4" />
+                        {{ importingPdf ? 'Converting…' : 'Upload PDF' }}
+                    </Button>
+                    <input ref="pdfInput" type="file" accept="application/pdf,.pdf" class="hidden" @change="importPdf" />
+                </div>
+
+                <div v-if="pdfDraft" class="mt-4 space-y-4 rounded-md border bg-card p-4">
+                    <div>
+                        <h3 class="font-medium">Review extracted draft</h3>
+                        <p class="text-xs text-muted-foreground">Review the detected assignment type and edit the generated content before applying it.</p>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-3">
+                        <div class="grid gap-1.5">
+                            <Label>Detected type</Label>
+                            <Select v-model="pdfDraft.type">
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="essay">Essay</SelectItem>
+                                    <SelectItem value="mcq">Multiple Choice</SelectItem>
+                                    <SelectItem value="code">Code Assignment</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <Label>Category</Label>
+                            <Select v-model="pdfDraft.category">
+                                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="null">None</SelectItem>
+                                    <SelectItem value="quiz">Quiz</SelectItem>
+                                    <SelectItem value="exam">Exam</SelectItem>
+                                    <SelectItem value="activity">Activity</SelectItem>
+                                    <SelectItem value="project">Project</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div v-if="pdfDraft.type === 'code'" class="grid gap-1.5">
+                            <Label>Language</Label>
+                            <Select v-model="pdfDraft.language">
+                                <SelectTrigger><SelectValue placeholder="Select language" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem v-for="language in codeLanguages" :key="language" :value="language">{{ language }}</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <div class="grid gap-1.5">
+                        <Label for="pdf_draft_title">Draft title</Label>
+                        <Input id="pdf_draft_title" v-model="pdfDraft.title" />
+                    </div>
+                    <div class="grid gap-1.5">
+                        <Label for="pdf_draft_instructions">Draft instructions</Label>
+                        <textarea id="pdf_draft_instructions" v-model="pdfDraft.instructions" rows="6" class="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                    </div>
+                    <div class="grid gap-1.5">
+                        <Label for="pdf_draft_rubric">Draft rubric</Label>
+                        <textarea id="pdf_draft_rubric" v-model="pdfDraft.rubric" rows="4" class="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                    </div>
+                    <div v-if="pdfDraft.type === 'mcq'" class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <Label>Generated questions</Label>
+                            <span class="text-xs text-muted-foreground">Green checks are AI-predicted answers. Review them carefully.</span>
+                        </div>
+                        <div v-for="(question, questionIndex) in pdfDraft.questions" :key="questionIndex" class="space-y-2 rounded-md border p-3">
+                            <div class="flex gap-2">
+                                <span class="pt-2 text-xs font-semibold text-muted-foreground">Q{{ questionIndex + 1 }}</span>
+                                <textarea v-model="question.question" rows="2" class="flex min-h-[60px] flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                                <Input v-model="question.points" type="number" min="0.5" step="0.5" class="w-20" />
+                            </div>
+                            <div v-for="(choice, choiceIndex) in question.choices" :key="choiceIndex" class="flex items-center gap-2 pl-6">
+                                <Checkbox v-model:checked="choice.is_correct" />
+                                <Input v-model="choice.choice_text" class="flex-1" />
+                            </div>
+                        </div>
+                        <p v-if="pdfDraft.questions.length === 0" class="text-sm text-muted-foreground">No questions were detected. You can add them after applying the draft.</p>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <Button type="button" variant="ghost" @click="pdfDraft = null">Discard draft</Button>
+                        <Button type="button" @click="applyPdfDraft">Apply to assignment</Button>
+                    </div>
+                </div>
+            </section>
 
             <!-- Rubric (essay & code) -->
             <div v-if="form.type !== 'mcq'" class="grid gap-1.5">

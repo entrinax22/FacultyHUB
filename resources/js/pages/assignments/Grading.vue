@@ -117,11 +117,11 @@ function isCorrect(question: Question, studentChoiceId: number | null): boolean 
                             <div
                                 v-for="c in q.choices"
                                 :key="c.id"
-                                class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm"
+                                class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100"
                                 :class="{
-                                    'bg-green-50 border border-green-200': c.is_correct,
-                                    'bg-red-50 border border-red-200': getStudentAnswer(q.id) === c.id && !c.is_correct,
-                                    'border': getStudentAnswer(q.id) !== c.id && !c.is_correct,
+                                    'border border-green-200 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100': c.is_correct,
+                                    'border border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100': getStudentAnswer(q.id) === c.id && !c.is_correct,
+                                    'border border-slate-200 text-slate-900 dark:border-slate-700 dark:text-slate-100': getStudentAnswer(q.id) !== c.id && !c.is_correct,
                                 }"
                             >
                                 <span class="text-xs font-mono w-4">{{ getStudentAnswer(q.id) === c.id ? '►' : ' ' }}</span>

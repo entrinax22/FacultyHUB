@@ -12,6 +12,8 @@ class Assignment extends Model
         'section_id', 'module_id', 'component_id', 'period', 'category', 'title', 'instructions', 'type',
         'due_date', 'max_score', 'passing_score', 'is_published',
         'rubric', 'language', 'answer_release_at',
+        'duration_minutes',
+        'proctoring_enabled',
     ];
 
     protected $casts = [
@@ -20,6 +22,8 @@ class Assignment extends Model
         'is_published' => 'boolean',
         'max_score' => 'float',
         'passing_score' => 'float',
+        'duration_minutes' => 'integer',
+        'proctoring_enabled' => 'boolean',
     ];
 
     public function section()
@@ -70,5 +74,10 @@ class Assignment extends Model
     public function answersReleased(): bool
     {
         return $this->answer_release_at && now()->isAfter($this->answer_release_at);
+    }
+
+    public function isMonitoredExam(): bool
+    {
+        return $this->proctoring_enabled && ($this->category === 'exam' || $this->type === 'mcq');
     }
 }

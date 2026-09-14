@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search } from 'lucide-vue-next';
+import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search, Bot } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -33,6 +33,7 @@ const adminNavItems: NavItem[] = [
     { title: 'Dashboard',   href: '/admin',         icon: LayoutGrid },
     { title: 'Users',       href: '/admin/users',   icon: Users },
     { title: 'Reports',     href: '/admin/reports', icon: BarChart3 },
+    { title: 'AI Settings', href: '/admin/ai-settings', icon: Bot },
     { title: 'Semesters',   href: '/admin/semesters', icon: CalendarDays },
     { title: 'Subjects',    href: '/subjects',       icon: BookMarked },
     { title: 'Sections',    href: '/sections',       icon: Layers },

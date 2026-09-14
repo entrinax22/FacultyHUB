@@ -6,11 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Submission extends Model
 {
-    protected $fillable = ['assignment_id', 'student_id', 'content', 'answers', 'submitted_at', 'status'];
+    protected $fillable = ['assignment_id', 'student_id', 'content', 'answers', 'submitted_at', 'started_at', 'expires_at', 'terms_accepted_at', 'status'];
 
     protected $casts = [
         'answers' => 'array',
         'submitted_at' => 'datetime',
+        'started_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'terms_accepted_at' => 'datetime',
     ];
 
     public function assignment()
@@ -33,6 +36,11 @@ class Submission extends Model
         return $this->hasOne(AiFeedback::class);
     }
 
+    public function proctoringEvents()
+    {
+        return $this->hasMany(ProctoringEvent::class);
+    }
+
     public function isGraded(): bool
     {
         return in_array($this->status, ['graded', 'approved']);
@@ -41,5 +49,12 @@ class Submission extends Model
     public function isApproved(): bool
     {
         return $this->status === 'approved';
+    }
+
+    public function isActiveExamAttempt(): bool
+    {
+        return $this->started_at !== null
+            && ! $this->isApproved()
+            && ($this->expires_at === null || now()->lessThanOrEqualTo($this->expires_at));
     }
 }
