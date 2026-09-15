@@ -1,0 +1,95 @@
+FROM php:8.3-cli
+
+# ---------------------------------------------------------
+# System dependencies
+# ---------------------------------------------------------
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    curl \
+    libzip-dev \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    libicu-dev \
+    libexif-dev \
+    nodejs \
+    npm \
+    && docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        mbstring \
+        xml \
+        bcmath \
+        zip \
+        intl \
+        exif \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------
+# Composer
+# ---------------------------------------------------------
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# ---------------------------------------------------------
+# Application directory
+# ---------------------------------------------------------
+WORKDIR /var/www/html
+
+# ---------------------------------------------------------
+# Composer dependencies
+# ---------------------------------------------------------
+COPY composer.json composer.lock ./
+
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --prefer-dist \
+    --optimize-autoloader \
+    --no-scripts
+
+# ---------------------------------------------------------
+# Node dependencies
+# ---------------------------------------------------------
+COPY package.json package-lock.json ./
+
+RUN npm ci
+
+# ---------------------------------------------------------
+# Copy application source
+# ---------------------------------------------------------
+COPY . .
+
+# ---------------------------------------------------------
+# Run Laravel package discovery after source is available
+# ---------------------------------------------------------
+RUN php artisan package:discover --ansi
+
+# ---------------------------------------------------------
+# Build Vue / Inertia frontend
+# ---------------------------------------------------------
+RUN npm run build
+
+# ---------------------------------------------------------
+# Laravel production optimization
+# ---------------------------------------------------------
+RUN php artisan config:clear \
+    && php artisan route:clear \
+    && php artisan view:clear
+
+# ---------------------------------------------------------
+# Storage permissions
+# ---------------------------------------------------------
+RUN mkdir -p \
+    storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
+
+# ---------------------------------------------------------
+# Vercel HTTP server
+# ---------------------------------------------------------
+CMD ["sh", "-c", "php artisan serve --host=0.0.0.0 --port=${PORT:-80}"]
