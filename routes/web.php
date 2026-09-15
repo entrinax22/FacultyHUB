@@ -136,7 +136,7 @@ Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
 
 // ─── Admin Only ───────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
-    Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
+    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
     Route::get('users', [AdminController::class, 'users'])->name('users');
     Route::put('users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
     Route::get('reports', [AdminController::class, 'reports'])->name('reports');

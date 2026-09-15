@@ -30,7 +30,8 @@ const facultyNavItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
-    { title: 'Dashboard',   href: '/admin',         icon: LayoutGrid },
+    { title: 'Home', href: '/', icon: Home },
+    { title: 'Dashboard',   href: '/admin/dashboard',         icon: LayoutGrid },
     { title: 'Users',       href: '/admin/users',   icon: Users },
     { title: 'Reports',     href: '/admin/reports', icon: BarChart3 },
     { title: 'AI Settings', href: '/admin/ai-settings', icon: Bot },

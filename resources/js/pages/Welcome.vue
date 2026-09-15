@@ -85,7 +85,7 @@ const dashboardUrl = computed(() => {
     }
 
     if (isStudent.value) {
-        return '/dashboard';
+        return '/my-sections';
     }
 
     return '/';
