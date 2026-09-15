@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search, Bot } from 'lucide-vue-next';
+import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search, Bot, Home} from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -20,7 +20,7 @@ const page = usePage();
 const role = computed(() => (page.props.auth as any).role as string | undefined);
 
 const commonNavItems: NavItem[] = [
-    { title: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
+    { title: 'Home', href: '/', icon: Home },
 ];
 
 const facultyNavItems: NavItem[] = [

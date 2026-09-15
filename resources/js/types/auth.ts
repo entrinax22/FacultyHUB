@@ -11,6 +11,7 @@ export type User = {
 };
 
 export type Auth = {
+    role: any;
     user: User;
 };
 
