@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import {
@@ -67,22 +66,21 @@ defineOptions({
 <template>
     <Head title="Admin Dashboard" />
 
-    <div
-        class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
-    >
-        <!-- Header -->
-        <div
-            class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-        >
+    <div class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6">
+        <!-- ========================================================= -->
+        <!-- HEADER -->
+        <!-- ========================================================= -->
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <!-- Title -->
             <div class="flex min-w-0 items-start gap-3">
                 <div
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:h-10 sm:w-10"
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
                 >
-                    <Shield class="h-4 w-4 text-primary sm:h-5 sm:w-5" />
+                    <Shield class="h-5 w-5 text-primary" />
                 </div>
 
                 <div class="min-w-0">
-                    <h1 class="text-xl font-semibold sm:text-2xl">
+                    <h1 class="truncate text-xl font-semibold sm:text-2xl">
                         Admin Dashboard
                     </h1>
 
@@ -99,7 +97,7 @@ defineOptions({
 
                         <span
                             v-else
-                            class="text-orange-500"
+                            class="font-medium text-orange-500"
                         >
                             No active semester
                         </span>
@@ -108,48 +106,48 @@ defineOptions({
             </div>
 
             <!-- Header Actions -->
-            <div class="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            <div
+                class="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:shrink-0"
+            >
                 <Button
                     size="sm"
                     variant="outline"
                     as-child
-                    class="w-full"
+                    class="w-full lg:w-auto"
                 >
                     <Link href="/admin/users">
-                        <Users class="mr-2 h-4 w-4" />
-                        Manage Users
+                        <Users class="mr-2 h-4 w-4 shrink-0" />
+                        <span>Manage Users</span>
                     </Link>
                 </Button>
 
                 <Button
                     size="sm"
                     as-child
-                    class="w-full"
+                    class="w-full lg:w-auto"
                 >
                     <Link href="/admin/reports">
-                        <FileCheck class="mr-2 h-4 w-4" />
-                        View Reports
+                        <FileCheck class="mr-2 h-4 w-4 shrink-0" />
+                        <span>View Reports</span>
                     </Link>
                 </Button>
             </div>
         </div>
 
-        <!-- Stats Grid -->
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        <!-- ========================================================= -->
+        <!-- STATS -->
+        <!-- ========================================================= -->
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             <!-- Total Users -->
-            <Card class="min-w-0">
+            <Card class="min-w-0 overflow-hidden">
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
                 >
-                    <CardTitle
-                        class="truncate text-xs font-medium sm:text-sm"
-                    >
+                    <CardTitle class="truncate text-xs font-medium sm:text-sm">
                         Total Users
                     </CardTitle>
 
-                    <Users
-                        class="h-4 w-4 shrink-0 text-muted-foreground"
-                    />
+                    <Users class="h-4 w-4 shrink-0 text-muted-foreground" />
                 </CardHeader>
 
                 <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
@@ -157,9 +155,7 @@ defineOptions({
                         {{ stats.users }}
                     </p>
 
-                    <p
-                        class="truncate text-[10px] text-muted-foreground sm:text-xs"
-                    >
+                    <p class="truncate text-[10px] text-muted-foreground sm:text-xs">
                         {{ stats.faculty }} faculty ·
                         {{ stats.students }} students
                     </p>
@@ -167,19 +163,15 @@ defineOptions({
             </Card>
 
             <!-- Sections -->
-            <Card class="min-w-0">
+            <Card class="min-w-0 overflow-hidden">
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
                 >
-                    <CardTitle
-                        class="truncate text-xs font-medium sm:text-sm"
-                    >
+                    <CardTitle class="truncate text-xs font-medium sm:text-sm">
                         Sections
                     </CardTitle>
 
-                    <Layers
-                        class="h-4 w-4 shrink-0 text-muted-foreground"
-                    />
+                    <Layers class="h-4 w-4 shrink-0 text-muted-foreground" />
                 </CardHeader>
 
                 <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
@@ -194,13 +186,11 @@ defineOptions({
             </Card>
 
             <!-- Enrollments -->
-            <Card class="min-w-0">
+            <Card class="min-w-0 overflow-hidden">
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
                 >
-                    <CardTitle
-                        class="truncate text-xs font-medium sm:text-sm"
-                    >
+                    <CardTitle class="truncate text-xs font-medium sm:text-sm">
                         Enrollments
                     </CardTitle>
 
@@ -221,13 +211,11 @@ defineOptions({
             </Card>
 
             <!-- Submissions -->
-            <Card class="min-w-0">
+            <Card class="min-w-0 overflow-hidden">
                 <CardHeader
                     class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
                 >
-                    <CardTitle
-                        class="truncate text-xs font-medium sm:text-sm"
-                    >
+                    <CardTitle class="truncate text-xs font-medium sm:text-sm">
                         Submissions
                     </CardTitle>
 
@@ -258,7 +246,7 @@ defineOptions({
 
                         <span
                             v-else
-                            class="text-muted-foreground"
+                            class="truncate text-muted-foreground"
                         >
                             all graded
                         </span>
@@ -267,13 +255,13 @@ defineOptions({
             </Card>
         </div>
 
-        <!-- Semester + Recent Sections -->
-        <div class="grid gap-4 sm:gap-6 lg:grid-cols-2">
+        <!-- ========================================================= -->
+        <!-- SEMESTER + RECENT SECTIONS -->
+        <!-- ========================================================= -->
+        <div class="grid min-w-0 gap-4 lg:grid-cols-2 lg:gap-6">
             <!-- Semester Breakdown -->
-            <div class="min-w-0 rounded-xl border bg-card shadow-sm">
-                <div
-                    class="border-b px-4 py-3 text-sm font-semibold"
-                >
+            <div class="min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm">
+                <div class="border-b px-4 py-3 text-sm font-semibold">
                     Enrollment by Semester
                 </div>
 
@@ -284,16 +272,13 @@ defineOptions({
                     No semesters yet.
                 </div>
 
-                <div
-                    v-else
-                    class="divide-y"
-                >
+                <div v-else class="divide-y">
                     <div
                         v-for="sem in semesterStats"
                         :key="sem.id"
-                        class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                     >
-                        <div class="min-w-0">
+                        <div class="min-w-0 flex-1">
                             <p
                                 class="truncate text-sm font-medium"
                                 :title="`${sem.name} ${sem.school_year}`"
@@ -310,9 +295,7 @@ defineOptions({
                             </p>
                         </div>
 
-                        <div
-                            class="flex shrink-0 items-center gap-2 text-sm"
-                        >
+                        <div class="flex shrink-0 items-center gap-2 text-sm">
                             <Badge
                                 v-if="sem.is_active"
                                 variant="default"
@@ -334,7 +317,7 @@ defineOptions({
             </div>
 
             <!-- Recent Sections -->
-            <div class="min-w-0 rounded-xl border bg-card shadow-sm">
+            <div class="min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm">
                 <div
                     class="flex items-center justify-between gap-3 border-b px-4 py-3"
                 >
@@ -361,16 +344,13 @@ defineOptions({
                     No sections yet.
                 </div>
 
-                <div
-                    v-else
-                    class="divide-y"
-                >
+                <div v-else class="divide-y">
                     <div
                         v-for="section in recentSections"
                         :key="section.id"
-                        class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                        class="flex min-w-0 items-center justify-between gap-3 px-4 py-3 text-sm"
                     >
-                        <div class="min-w-0">
+                        <div class="min-w-0 flex-1">
                             <p
                                 class="truncate font-medium"
                                 :title="`${section.subject_code} · ${section.name}`"
@@ -402,8 +382,10 @@ defineOptions({
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div>
+        <!-- ========================================================= -->
+        <!-- QUICK ACTIONS -->
+        <!-- ========================================================= -->
+        <div class="min-w-0">
             <div class="mb-3">
                 <h2 class="text-sm font-semibold">
                     Quick Actions
@@ -423,7 +405,7 @@ defineOptions({
                     </div>
 
                     <div class="min-w-0">
-                        <p class="font-medium">
+                        <p class="truncate font-medium">
                             Manage Users
                         </p>
 
@@ -445,7 +427,7 @@ defineOptions({
                     </div>
 
                     <div class="min-w-0">
-                        <p class="font-medium">
+                        <p class="truncate font-medium">
                             Reports
                         </p>
 
@@ -457,7 +439,7 @@ defineOptions({
 
                 <!-- Semesters -->
                 <Link
-                    href="/semesters"
+                    href="/admin/semesters"
                     class="group flex min-w-0 items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
                 >
                     <div
@@ -467,7 +449,7 @@ defineOptions({
                     </div>
 
                     <div class="min-w-0">
-                        <p class="font-medium">
+                        <p class="truncate font-medium">
                             Semesters
                         </p>
 
@@ -489,7 +471,7 @@ defineOptions({
                     </div>
 
                     <div class="min-w-0">
-                        <p class="font-medium">
+                        <p class="truncate font-medium">
                             Sections
                         </p>
 

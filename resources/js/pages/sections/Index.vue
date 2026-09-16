@@ -1,9 +1,22 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { Plus, Pencil, Trash2, Users, BookOpen } from 'lucide-vue-next';
+import {
+    Plus,
+    Pencil,
+    Trash2,
+    Users,
+    BookOpen,
+} from 'lucide-vue-next';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 type Section = {
     id: number;
@@ -11,13 +24,35 @@ type Section = {
     schedule: string | null;
     room: string | null;
     enrollments_count: number;
-    semester: { id: number; name: string; school_year: string; is_active: boolean };
-    subject: { id: number; code: string; name: string };
-    faculty: { id: number; name: string };
+    semester: {
+        id: number;
+        name: string;
+        school_year: string;
+        is_active: boolean;
+    };
+    subject: {
+        id: number;
+        code: string;
+        name: string;
+    };
+    faculty: {
+        id: number;
+        name: string;
+    };
 };
-type Semester = { id: number; name: string; school_year: string; is_active: boolean };
 
-const props = defineProps<{ sections: Section[]; semesters: Semester[]; selectedSemesterId: number | null }>();
+type Semester = {
+    id: number;
+    name: string;
+    school_year: string;
+    is_active: boolean;
+};
+
+const props = defineProps<{
+    sections: Section[];
+    semesters: Semester[];
+    selectedSemesterId: number | null;
+}>();
 
 defineOptions({
     layout: {
@@ -29,7 +64,11 @@ defineOptions({
 });
 
 function deleteSection(id: number) {
-    if (confirm('Delete this section? All enrollments will also be removed.')) {
+    if (
+        confirm(
+            'Delete this section? All enrollments will also be removed.',
+        )
+    ) {
         router.delete(`/sections/${id}`);
     }
 }
@@ -39,87 +78,236 @@ function changeSemester(value: unknown) {
         return;
     }
 
-    router.get('/sections', { semester_id: value }, { preserveState: true, replace: true });
+    router.get(
+        '/sections',
+        { semester_id: value },
+        {
+            preserveState: true,
+            replace: true,
+        },
+    );
 }
 </script>
 
 <template>
     <Head title="Sections" />
 
-    <div class="flex h-full flex-1 flex-col gap-6 p-4">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-semibold">Sections</h1>
-                <p class="text-sm text-muted-foreground">Manage class sections per semester</p>
+    <div
+        class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
+    >
+        <!-- ========================================================= -->
+        <!-- HEADER -->
+        <!-- ========================================================= -->
+        <div
+            class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+        >
+            <!-- Title -->
+            <div class="min-w-0">
+                <h1 class="text-xl font-semibold sm:text-2xl">
+                    Sections
+                </h1>
+
+                <p class="mt-1 text-xs text-muted-foreground sm:text-sm">
+                    Manage class sections per semester
+                </p>
             </div>
-            <div class="flex items-center gap-3">
-                <Select :model-value="props.selectedSemesterId?.toString() ?? ''" @update:model-value="changeSemester">
-                    <SelectTrigger class="w-56">
+
+            <!-- Filters / Actions -->
+            <div
+                class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"
+            >
+                <!-- Semester -->
+                <Select
+                    :model-value="
+                        props.selectedSemesterId?.toString() ?? ''
+                    "
+                    @update:model-value="changeSemester"
+                >
+                    <SelectTrigger class="h-9 w-full sm:w-56">
                         <SelectValue placeholder="Select semester" />
                     </SelectTrigger>
+
                     <SelectContent>
-                        <SelectItem v-for="semester in props.semesters" :key="semester.id" :value="semester.id.toString()">
-                            {{ semester.name }} {{ semester.school_year }}
-                            <span v-if="semester.is_active" class="ml-1 text-xs text-green-600">(Active)</span>
+                        <SelectItem
+                            v-for="semester in props.semesters"
+                            :key="semester.id"
+                            :value="semester.id.toString()"
+                        >
+                            {{ semester.name }}
+                            {{ semester.school_year }}
+
+                            <span
+                                v-if="semester.is_active"
+                                class="ml-1 text-xs text-green-600"
+                            >
+                                (Active)
+                            </span>
                         </SelectItem>
                     </SelectContent>
                 </Select>
-                <Button as-child>
+
+                <!-- New Section -->
+                <Button
+                    as-child
+                    class="w-full sm:w-auto"
+                >
                     <Link href="/sections/create">
-                        <Plus class="mr-2 h-4 w-4" />
+                        <Plus class="mr-2 h-4 w-4 shrink-0" />
                         New Section
                     </Link>
                 </Button>
             </div>
         </div>
 
-        <div v-if="sections.length === 0" class="rounded-xl border border-dashed p-12 text-center text-muted-foreground">
-            No sections yet. Create your first section.
+        <!-- ========================================================= -->
+        <!-- EMPTY STATE -->
+        <!-- ========================================================= -->
+        <div
+            v-if="sections.length === 0"
+            class="flex min-h-48 items-center justify-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground sm:min-h-56"
+        >
+            <div>
+                <p>No sections yet.</p>
+
+                <p class="mt-1">
+                    Create your first section to get started.
+                </p>
+            </div>
         </div>
 
-        <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <!-- ========================================================= -->
+        <!-- SECTION GRID -->
+        <!-- ========================================================= -->
+        <div
+            v-else
+            class="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3"
+        >
             <div
                 v-for="section in sections"
                 :key="section.id"
-                class="rounded-xl border p-4 space-y-3 hover:bg-muted/20 transition-colors"
+                class="flex min-w-0 flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/20"
             >
-                <div class="flex items-start justify-between">
-                    <div>
-                        <h3 class="font-semibold">{{ section.name }}</h3>
-                        <p class="text-sm text-muted-foreground">{{ section.subject.code }} — {{ section.subject.name }}</p>
+                <!-- Section Header -->
+                <div
+                    class="flex min-w-0 items-start justify-between gap-3"
+                >
+                    <div class="min-w-0 flex-1">
+                        <h3
+                            class="truncate font-semibold"
+                            :title="section.name"
+                        >
+                            {{ section.name }}
+                        </h3>
+
+                        <p
+                            class="mt-1 truncate text-sm text-muted-foreground"
+                            :title="`${section.subject.code} — ${section.subject.name}`"
+                        >
+                            {{ section.subject.code }}
+                            —
+                            {{ section.subject.name }}
+                        </p>
                     </div>
-                    <Badge :variant="section.semester.is_active ? 'default' : 'secondary'" class="text-xs">
+
+                    <Badge
+                        :variant="
+                            section.semester.is_active
+                                ? 'default'
+                                : 'secondary'
+                        "
+                        class="shrink-0 text-xs"
+                    >
                         {{ section.semester.name }}
                     </Badge>
                 </div>
 
-                <div class="space-y-1 text-xs text-muted-foreground">
-                    <div v-if="section.schedule" class="flex items-center gap-1.5">
-                        <BookOpen class="h-3 w-3" />
-                        {{ section.schedule }}
+                <!-- Section Information -->
+                <div
+                    class="mt-4 space-y-2 text-xs text-muted-foreground"
+                >
+                    <!-- Schedule -->
+                    <div
+                        v-if="section.schedule"
+                        class="flex min-w-0 items-start gap-2"
+                    >
+                        <BookOpen
+                            class="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        />
+
+                        <span class="break-words">
+                            {{ section.schedule }}
+                        </span>
                     </div>
-                    <div v-if="section.room" class="flex items-center gap-1.5">
-                        Room {{ section.room }}
+
+                    <!-- Room -->
+                    <div
+                        v-if="section.room"
+                        class="flex min-w-0 items-start gap-2"
+                    >
+                        <span class="w-3.5 shrink-0 text-center">
+                            •
+                        </span>
+
+                        <span class="break-words">
+                            Room {{ section.room }}
+                        </span>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                        <Users class="h-3 w-3" />
-                        {{ section.enrollments_count }} student{{ section.enrollments_count !== 1 ? 's' : '' }}
+
+                    <!-- Students -->
+                    <div class="flex items-center gap-2">
+                        <Users class="h-3.5 w-3.5 shrink-0" />
+
+                        <span>
+                            {{ section.enrollments_count }}
+                            student{{
+                                section.enrollments_count !== 1
+                                    ? 's'
+                                    : ''
+                            }}
+                        </span>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2 pt-1">
-                    <Button variant="outline" size="sm" class="flex-1" as-child>
-                        <Link :href="`/sections/${section.id}`">View Class</Link>
-                    </Button>
-                    <Button variant="outline" size="sm" as-child>
-                        <Link :href="`/sections/${section.id}/edit`">
-                            <Pencil class="h-3.5 w-3.5" />
-                        </Link>
-                    </Button>
+                <!-- Actions -->
+                <div
+                    class="mt-5 grid grid-cols-[1fr_auto_auto] gap-2 border-t pt-4"
+                >
+                    <!-- View -->
                     <Button
                         variant="outline"
                         size="sm"
-                        class="text-destructive hover:text-destructive"
+                        class="min-w-0"
+                        as-child
+                    >
+                        <Link
+                            :href="`/sections/${section.id}`"
+                            class="truncate"
+                        >
+                            View Class
+                        </Link>
+                    </Button>
+
+                    <!-- Edit -->
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="h-9 w-9 p-0"
+                        as-child
+                    >
+                        <Link
+                            :href="`/sections/${section.id}/edit`"
+                            :aria-label="`Edit ${section.name}`"
+                        >
+                            <Pencil class="h-3.5 w-3.5" />
+                        </Link>
+                    </Button>
+
+                    <!-- Delete -->
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="h-9 w-9 p-0 text-destructive hover:text-destructive"
+                        :aria-label="`Delete ${section.name}`"
                         @click="deleteSection(section.id)"
                     >
                         <Trash2 class="h-3.5 w-3.5" />
