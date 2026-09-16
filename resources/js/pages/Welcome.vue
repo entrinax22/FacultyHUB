@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount } from 'vue';
-
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 
 import {
@@ -126,38 +125,38 @@ const logout = () => {
 const features = [
     {
         icon: BookOpen,
-        title: 'Module Management',
-        desc: 'Upload PDFs and learning files while students track their reading progress with a visual completion bar.',
+        title: 'Learning Modules',
+        desc: 'Faculty can upload learning materials while students access modules, track their progress, and stay organized throughout the course.',
         color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     },
     {
         icon: ClipboardList,
         title: 'Assignments & Quizzes',
-        desc: 'Create essays, MCQs, and programming problems with automatic grading for objective assessments.',
+        desc: 'Faculty can create assignments, quizzes, essays, and programming activities while students submit their work and track deadlines.',
         color: 'bg-lime-50 text-lime-700 dark:bg-lime-950/50 dark:text-lime-300',
     },
     {
         icon: Bot,
-        title: 'AI-Powered Grading',
-        desc: 'Use Claude AI to assist with essay and code grading while keeping faculty in control of final results.',
+        title: 'AI-Assisted Grading',
+        desc: 'AI helps faculty evaluate essays and programming submissions while students receive feedback on their work.',
         color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     },
     {
         icon: BarChart2,
-        title: 'Plagiarism Detection',
-        desc: 'Batch-compare essay submissions and quickly identify submissions with high similarity.',
+        title: 'Grades & Progress',
+        desc: 'Faculty can manage class records and grades while students can view their scores, component grades, and overall academic progress.',
         color: 'bg-lime-50 text-lime-700 dark:bg-lime-950/50 dark:text-lime-300',
     },
     {
         icon: CalendarCheck,
         title: 'Attendance Tracking',
-        desc: 'Open attendance sessions, record P/L/A/E statuses, and quickly identify students with absence concerns.',
+        desc: 'Faculty can record attendance efficiently while students can monitor their attendance history and stay aware of their participation.',
         color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     },
     {
         icon: Users,
-        title: 'Class Record',
-        desc: 'Manage grades using a spreadsheet-style grade book with weighted components and transmutation.',
+        title: 'Connected Classrooms',
+        desc: 'Bring faculty and students together in organized sections with shared modules, assessments, attendance, grades, and class information.',
         color: 'bg-lime-50 text-lime-700 dark:bg-lime-950/50 dark:text-lime-300',
     },
 ];
@@ -190,7 +189,6 @@ onMounted(() => {
             entries.forEach((entry) => {
                 if (entry.isIntersecting) {
                     entry.target.classList.add('is-visible');
-
                     observer?.unobserve(entry.target);
                 }
             });
@@ -201,11 +199,9 @@ onMounted(() => {
         },
     );
 
-    document
-        .querySelectorAll('.scroll-reveal')
-        .forEach((element) => {
-            observer?.observe(element);
-        });
+    document.querySelectorAll('.scroll-reveal').forEach((element) => {
+        observer?.observe(element);
+    });
 });
 
 onBeforeUnmount(() => {
@@ -216,27 +212,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="FacultyHUB — Smart LMS for Faculty" />
+    <Head title="FacultyLMS — Learning Management for Faculty & Students" />
 
-    <div class="flex min-h-screen flex-col bg-background text-foreground">
+    <div class="flex min-h-screen min-w-0 flex-col bg-background text-foreground">
         <!-- =========================================================
              NAVBAR
         ========================================================== -->
-
         <header
             class="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl"
         >
             <div
-                class="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8"
+                class="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
             >
                 <!-- Logo -->
-
                 <Link
                     href="/"
-                    class="group flex items-center gap-2.5"
+                    class="group flex min-w-0 shrink-0 items-center gap-2.5"
                 >
                     <div
-                        class="flex size-9 items-center justify-center rounded-xl brand-gradient shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:rotate-3"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-xl brand-gradient shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:rotate-3"
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -316,16 +310,16 @@ onBeforeUnmount(() => {
                         </svg>
                     </div>
 
-                    <span class="text-lg font-bold tracking-tight">
-                        Faculty<span class="brand-gradient-text">HUB</span>
+                    <span
+                        class="truncate text-base font-bold tracking-tight sm:text-lg"
+                    >
+                        Faculty<span class="brand-gradient-text">LMS</span>
                     </span>
                 </Link>
 
                 <!-- Navigation -->
-
-                <nav class="flex items-center gap-2">
+                <nav class="flex min-w-0 items-center gap-1 sm:gap-2">
                     <!-- Public Navigation -->
-
                     <div class="mr-2 hidden items-center gap-5 md:flex">
                         <a
                             href="#features"
@@ -338,10 +332,8 @@ onBeforeUnmount(() => {
                     <!-- =====================================================
                          AUTHENTICATED USER
                     ====================================================== -->
-
                     <template v-if="user">
                         <!-- Role-Based Dashboard -->
-
                         <Button
                             variant="ghost"
                             size="sm"
@@ -354,7 +346,6 @@ onBeforeUnmount(() => {
                         </Button>
 
                         <!-- User Dropdown -->
-
                         <DropdownMenu>
                             <DropdownMenuTrigger as-child>
                                 <Button
@@ -362,9 +353,8 @@ onBeforeUnmount(() => {
                                     class="ml-1 flex items-center gap-2 rounded-full px-2.5 transition-all duration-200 hover:scale-[1.02] sm:px-3"
                                 >
                                     <!-- Avatar -->
-
                                     <div
-                                        class="flex size-7 items-center justify-center rounded-full brand-gradient transition-transform duration-300 hover:scale-105"
+                                        class="flex size-7 shrink-0 items-center justify-center rounded-full brand-gradient transition-transform duration-300 hover:scale-105"
                                     >
                                         <User
                                             class="size-4"
@@ -373,7 +363,6 @@ onBeforeUnmount(() => {
                                     </div>
 
                                     <!-- User Name -->
-
                                     <span
                                         class="hidden max-w-32 truncate text-sm font-medium sm:inline"
                                     >
@@ -381,7 +370,7 @@ onBeforeUnmount(() => {
                                     </span>
 
                                     <ChevronDown
-                                        class="size-4 text-muted-foreground transition-transform duration-200"
+                                        class="size-4 shrink-0 text-muted-foreground transition-transform duration-200"
                                     />
                                 </Button>
                             </DropdownMenuTrigger>
@@ -391,7 +380,6 @@ onBeforeUnmount(() => {
                                 class="w-60"
                             >
                                 <!-- User Information -->
-
                                 <div class="px-3 py-2.5">
                                     <p
                                         class="truncate text-sm font-semibold"
@@ -406,10 +394,8 @@ onBeforeUnmount(() => {
                                     </p>
 
                                     <!-- Role Badge -->
-
                                     <div class="mt-2">
                                         <!-- Admin -->
-
                                         <span
                                             v-if="isAdmin"
                                             class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-300"
@@ -418,7 +404,6 @@ onBeforeUnmount(() => {
                                         </span>
 
                                         <!-- Faculty -->
-
                                         <span
                                             v-else-if="isFaculty"
                                             class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
@@ -427,7 +412,6 @@ onBeforeUnmount(() => {
                                         </span>
 
                                         <!-- Student -->
-
                                         <span
                                             v-else-if="isStudent"
                                             class="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300"
@@ -440,20 +424,17 @@ onBeforeUnmount(() => {
                                 <DropdownMenuSeparator />
 
                                 <!-- Profile -->
-
                                 <DropdownMenuItem as-child>
                                     <Link
                                         href="/profile"
                                         class="flex cursor-pointer items-center gap-2"
                                     >
                                         <User class="size-4" />
-
                                         <span>Profile</span>
                                     </Link>
                                 </DropdownMenuItem>
 
-                                <!-- Role-Based Dashboard -->
-
+                                <!-- Dashboard -->
                                 <DropdownMenuItem as-child>
                                     <Link
                                         :href="dashboardUrl"
@@ -470,13 +451,11 @@ onBeforeUnmount(() => {
                                 <DropdownMenuSeparator />
 
                                 <!-- Logout -->
-
                                 <DropdownMenuItem
                                     class="cursor-pointer text-destructive focus:text-destructive"
                                     @click="logout"
                                 >
                                     <LogOut class="size-4" />
-
                                     <span>Log out</span>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -486,7 +465,6 @@ onBeforeUnmount(() => {
                     <!-- =====================================================
                          GUEST
                     ====================================================== -->
-
                     <template v-else>
                         <Button
                             variant="ghost"
@@ -507,7 +485,13 @@ onBeforeUnmount(() => {
                             as-child
                         >
                             <Link :href="register()">
-                                Get Started
+                                <span class="hidden xs:inline">
+                                    Get Started
+                                </span>
+
+                                <span class="xs:hidden">
+                                    Sign Up
+                                </span>
                             </Link>
                         </Button>
                     </template>
@@ -518,17 +502,14 @@ onBeforeUnmount(() => {
         <!-- =========================================================
              MAIN
         ========================================================== -->
-
-        <main class="flex-1">
+        <main class="min-w-0 flex-1">
             <!-- =====================================================
                  HERO
             ====================================================== -->
-
             <section
                 class="relative isolate overflow-hidden border-b border-border/40"
             >
                 <!-- Background -->
-
                 <div
                     class="glow-animation absolute inset-0 -z-10 brand-gradient"
                 ></div>
@@ -543,62 +524,59 @@ onBeforeUnmount(() => {
                 ></div>
 
                 <div
-                    class="mx-auto max-w-7xl px-6 pb-24 pt-20 text-center sm:pt-28 lg:px-8"
+                    class="mx-auto max-w-7xl px-4 pb-20 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:px-8 lg:pt-28"
                 >
                     <!-- Badge -->
-
                     <div
-                        class="fade-up mb-7 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/70 px-4 py-2 text-xs font-semibold shadow-sm backdrop-blur"
+                        class="fade-up mx-auto mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/20 bg-background/70 px-3 py-2 text-[11px] font-semibold shadow-sm backdrop-blur sm:px-4 sm:text-xs"
                     >
-                        <Sparkles class="size-3.5 text-primary" />
+                        <Sparkles
+                            class="size-3.5 shrink-0 text-primary"
+                        />
 
-                        <span>
-                            AI-Powered Learning Management System
+                        <span class="truncate">
+                            Learning Management System for Faculty & Students
                         </span>
 
                         <span
-                            class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"
+                            class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary"
                         ></span>
                     </div>
 
                     <!-- Heading -->
-
                     <h1
-                        class="fade-up mx-auto max-w-4xl text-5xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl"
+                        class="fade-up mx-auto max-w-4xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl"
                         style="animation-delay: 100ms"
                     >
-                        The smarter way to
-
+                        One platform for
                         <span class="brand-gradient-text">
-                            run your class
+                            teaching and learning
                         </span>
                     </h1>
 
                     <!-- Description -->
-
                     <p
-                        class="fade-up mx-auto mt-7 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg"
+                        class="fade-up mx-auto mt-6 max-w-2xl text-sm leading-6 text-muted-foreground sm:mt-7 sm:text-lg sm:leading-7"
                         style="animation-delay: 200ms"
                     >
-                        FacultyHUB brings modules, assignments, quizzes,
-                        attendance, grading, and class records into one
-                        streamlined platform — with AI assistance built right in.
+                        FacultyLMS connects faculty and students in one
+                        streamlined learning environment — from course
+                        materials and assessments to attendance, grading,
+                        feedback, and academic progress.
                     </p>
 
                     <!-- =================================================
                          ROLE-BASED CTA
                     ================================================== -->
-
                     <div
-                        class="fade-up mt-9 flex flex-wrap justify-center gap-3"
+                        class="fade-up mt-8 flex flex-col justify-center gap-3 sm:mt-9 sm:flex-row sm:flex-wrap"
                         style="animation-delay: 300ms"
                     >
                         <!-- Guest -->
-
                         <template v-if="!user">
                             <Button
                                 size="lg"
-                                class="brand-gradient border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl"
+                                class="brand-gradient w-full border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl sm:w-auto"
                                 style="color: hsl(142 30% 12%)"
                                 as-child
                             >
@@ -606,7 +584,7 @@ onBeforeUnmount(() => {
                                     Start Teaching
 
                                     <ArrowRight
-                                        class="ml-2 size-4 transition-transform duration-300 group-hover:translate-x-1"
+                                        class="ml-2 size-4 transition-transform duration-300"
                                     />
                                 </Link>
                             </Button>
@@ -615,7 +593,7 @@ onBeforeUnmount(() => {
                                 v-if="canRegister"
                                 variant="outline"
                                 size="lg"
-                                class="px-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+                                class="w-full px-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-md sm:w-auto"
                                 as-child
                             >
                                 <Link :href="register()">
@@ -625,11 +603,10 @@ onBeforeUnmount(() => {
                         </template>
 
                         <!-- Admin -->
-
                         <template v-else-if="isAdmin">
                             <Button
                                 size="lg"
-                                class="brand-gradient border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl"
+                                class="brand-gradient w-full border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl sm:w-auto"
                                 style="color: hsl(142 30% 12%)"
                                 as-child
                             >
@@ -642,11 +619,10 @@ onBeforeUnmount(() => {
                         </template>
 
                         <!-- Faculty -->
-
                         <template v-else-if="isFaculty">
                             <Button
                                 size="lg"
-                                class="brand-gradient border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl"
+                                class="brand-gradient w-full border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl sm:w-auto"
                                 style="color: hsl(142 30% 12%)"
                                 as-child
                             >
@@ -659,11 +635,10 @@ onBeforeUnmount(() => {
                         </template>
 
                         <!-- Student -->
-
                         <template v-else-if="isStudent">
                             <Button
                                 size="lg"
-                                class="brand-gradient border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl"
+                                class="brand-gradient w-full border-0 px-6 font-semibold shadow-lg transition-all duration-300 hover:-translate-y-1 hover:opacity-90 hover:shadow-xl sm:w-auto"
                                 style="color: hsl(142 30% 12%)"
                                 as-child
                             >
@@ -677,27 +652,29 @@ onBeforeUnmount(() => {
                     </div>
 
                     <!-- Trust Indicators -->
-
                     <div
-                        class="fade-up mx-auto mt-10 flex max-w-xl flex-wrap justify-center gap-x-6 gap-y-3 text-xs text-muted-foreground"
+                        class="fade-up mx-auto mt-9 flex max-w-2xl flex-wrap justify-center gap-x-6 gap-y-3 text-xs text-muted-foreground sm:mt-10"
                         style="animation-delay: 400ms"
                     >
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2 class="size-3.5 text-primary" />
-
-                            Faculty-focused
+                            <CheckCircle2
+                                class="size-3.5 text-primary"
+                            />
+                            Built for faculty and students
                         </span>
 
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2 class="size-3.5 text-primary" />
-
-                            AI-assisted grading
+                            <CheckCircle2
+                                class="size-3.5 text-primary"
+                            />
+                            AI-assisted learning and grading
                         </span>
 
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2 class="size-3.5 text-primary" />
-
-                            Centralized class records
+                            <CheckCircle2
+                                class="size-3.5 text-primary"
+                            />
+                            Centralized academic records
                         </span>
                     </div>
                 </div>
@@ -706,18 +683,16 @@ onBeforeUnmount(() => {
             <!-- =========================================================
                  FEATURES
             ========================================================== -->
-
             <section
                 id="features"
-                class="scroll-mt-16 bg-muted/30 py-20 sm:py-24"
+                class="scroll-mt-16 bg-muted/30 py-16 sm:py-24"
             >
                 <div
-                    class="mx-auto max-w-7xl px-6 lg:px-8"
+                    class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
                 >
                     <!-- Section Heading -->
-
                     <div
-                        class="scroll-reveal mx-auto mb-12 max-w-2xl text-center"
+                        class="scroll-reveal mx-auto mb-10 max-w-2xl text-center sm:mb-12"
                     >
                         <p
                             class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-primary"
@@ -728,26 +703,27 @@ onBeforeUnmount(() => {
                         <h2
                             class="text-3xl font-bold tracking-tight sm:text-4xl"
                         >
-                            Tools built for modern faculty
+                            Everything your class needs
                         </h2>
 
                         <p
                             class="mt-4 text-sm leading-6 text-muted-foreground sm:text-base"
                         >
-                            Spend less time managing administrative work and
-                            more time focusing on your students.
+                            FacultyLMS gives faculty the tools to manage
+                            their classes and gives students a simple place
+                            to learn, submit work, and track their academic
+                            progress.
                         </p>
                     </div>
 
                     <!-- Feature Cards -->
-
                     <div
-                        class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+                        class="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3"
                     >
                         <div
                             v-for="(f, index) in features"
                             :key="f.title"
-                            class="scroll-reveal group rounded-2xl border border-border/60 bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:border-primary/30 hover:shadow-lg"
+                            class="scroll-reveal group rounded-2xl border border-border/60 bg-card p-5 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:border-primary/30 hover:shadow-lg sm:p-6"
                             :style="{
                                 transitionDelay: `${index * 100}ms`,
                             }"
@@ -777,15 +753,190 @@ onBeforeUnmount(() => {
             </section>
 
             <!-- =========================================================
+                 FACULTY + STUDENT EXPERIENCE
+            ========================================================== -->
+            <section class="border-b border-border/40 bg-background py-16 sm:py-20">
+                <div
+                    class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
+                >
+                    <div class="grid gap-6 lg:grid-cols-2">
+                        <!-- Faculty -->
+                        <div
+                            class="scroll-reveal rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8"
+                        >
+                            <div
+                                class="mb-5 flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            >
+                                <Users class="size-5" />
+                            </div>
+
+                            <p
+                                class="text-xs font-bold uppercase tracking-[0.2em] text-primary"
+                            >
+                                For Faculty
+                            </p>
+
+                            <h3
+                                class="mt-2 text-2xl font-bold tracking-tight"
+                            >
+                                Manage your classes with less effort
+                            </h3>
+
+                            <p
+                                class="mt-3 text-sm leading-6 text-muted-foreground"
+                            >
+                                Organize sections, publish learning
+                                modules, create assessments, monitor
+                                attendance, manage grades, and use AI-assisted
+                                grading tools from one centralized workspace.
+                            </p>
+
+                            <div class="mt-6 space-y-3">
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Manage modules and course materials
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Create and manage assessments
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Track attendance and grades
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Review AI-assisted grading results
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Students -->
+                        <div
+                            class="scroll-reveal rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8"
+                            style="transition-delay: 100ms"
+                        >
+                            <div
+                                class="mb-5 flex size-11 items-center justify-center rounded-xl bg-lime-50 text-lime-700 dark:bg-lime-950/50 dark:text-lime-300"
+                            >
+                                <BookOpen class="size-5" />
+                            </div>
+
+                            <p
+                                class="text-xs font-bold uppercase tracking-[0.2em] text-primary"
+                            >
+                                For Students
+                            </p>
+
+                            <h3
+                                class="mt-2 text-2xl font-bold tracking-tight"
+                            >
+                                Keep your learning organized
+                            </h3>
+
+                            <p
+                                class="mt-3 text-sm leading-6 text-muted-foreground"
+                            >
+                                Access course materials, complete
+                                assignments and quizzes, monitor deadlines,
+                                check attendance, and keep track of your
+                                academic progress in one place.
+                            </p>
+
+                            <div class="mt-6 space-y-3">
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Access modules and learning materials
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Submit assignments and take quizzes
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        Monitor grades and academic progress
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="flex items-start gap-2.5 text-sm"
+                                >
+                                    <CheckCircle2
+                                        class="mt-0.5 size-4 shrink-0 text-primary"
+                                    />
+
+                                    <span>
+                                        View attendance and submission status
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =========================================================
                  CTA
             ========================================================== -->
-
             <section
                 id="get-started"
                 class="scroll-mt-16 brand-gradient py-16 sm:py-20"
             >
                 <div
-                    class="scroll-reveal mx-auto max-w-3xl px-6 text-center"
+                    class="scroll-reveal mx-auto max-w-3xl px-4 text-center sm:px-6"
                 >
                     <div
                         class="float-animation mx-auto mb-5 flex size-12 items-center justify-center rounded-2xl bg-white/60 shadow-sm"
@@ -797,34 +948,33 @@ onBeforeUnmount(() => {
                     </div>
 
                     <h2
-                        class="text-3xl font-bold tracking-tight"
+                        class="text-3xl font-bold tracking-tight sm:text-4xl"
                         style="color: hsl(142 30% 12%)"
                     >
-                        Ready to simplify your teaching?
+                        A better learning experience for everyone
                     </h2>
 
                     <p
                         class="mx-auto mt-3 max-w-xl text-sm leading-6"
                         style="color: hsl(142 25% 28%)"
                     >
-                        FacultyHUB brings modules, assessments, attendance,
-                        grading, and class records together in one place.
+                        FacultyLMS brings teaching, learning, assessments,
+                        attendance, grading, feedback, and academic progress
+                        together in one place.
                     </p>
 
                     <!-- CTA based on authentication -->
-
                     <div class="mt-7">
                         <!-- Guest -->
-
                         <Button
                             v-if="!user"
                             size="lg"
-                            class="border border-[hsl(142_30%_40%)] bg-white/90 px-6 font-semibold shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-xl"
+                            class="w-full border border-[hsl(142_30%_40%)] bg-white/90 px-6 font-semibold shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-xl sm:w-auto"
                             style="color: hsl(142 30% 15%)"
                             as-child
                         >
                             <Link :href="login()">
-                                Log in to FacultyHUB
+                                Log in to FacultyLMS
 
                                 <ArrowRight
                                     class="ml-2 size-4 transition-transform duration-300"
@@ -833,11 +983,10 @@ onBeforeUnmount(() => {
                         </Button>
 
                         <!-- Authenticated User -->
-
                         <Button
                             v-else
                             size="lg"
-                            class="border border-[hsl(142_30%_40%)] bg-white/90 px-6 font-semibold shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-xl"
+                            class="w-full border border-[hsl(142_30%_40%)] bg-white/90 px-6 font-semibold shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-xl sm:w-auto"
                             style="color: hsl(142 30% 15%)"
                             as-child
                         >
@@ -857,19 +1006,19 @@ onBeforeUnmount(() => {
         <!-- =========================================================
              FOOTER
         ========================================================== -->
-
         <footer
             class="border-t border-border/60 bg-background py-6"
         >
             <div
-                class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-6 text-xs text-muted-foreground sm:flex-row lg:px-8"
+                class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-center text-xs text-muted-foreground sm:flex-row sm:px-6 sm:text-left lg:px-8"
             >
                 <p>
-                    FacultyHUB © {{ new Date().getFullYear() }}
+                    FacultyLMS © {{ new Date().getFullYear() }}
+                    · Teaching & Learning Platform
                 </p>
 
                 <p>
-                    Laravel · Vue 3 · Inertia.js · Claude AI
+                    Empowering faculty and students through connected learning
                 </p>
             </div>
         </footer>

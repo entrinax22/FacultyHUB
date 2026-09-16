@@ -14,7 +14,7 @@
     </div>
     <div class="ml-2 grid flex-1 text-left text-sm leading-none">
         <span class="truncate font-bold tracking-tight text-sidebar-foreground">
-            Faculty<span class="text-sidebar-primary">HUB</span>
+            Faculty<span class="text-sidebar-primary">LMS</span>
         </span>
     </div>
 </template>

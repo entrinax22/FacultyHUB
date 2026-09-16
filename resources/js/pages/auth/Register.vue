@@ -7,14 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import AuthSplitLayout from '@/layouts/auth/AuthSplitLayout.vue';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 
 defineOptions({
-    layout: {
-        title: 'Create an account',
-        description: 'Enter your details below to create your account',
-    },
+    layout: (h: any, page: any) =>
+        h(AuthSplitLayout, {
+            title: 'Create an account',
+            description: 'Enter your details below to create your account',
+        }, () => page),
 });
 </script>
 
@@ -108,7 +110,7 @@ defineOptions({
             </Button>
         </div>
 
-        <div class="text-center text-sm text-muted-foreground">
+        <div class="text-sm text-muted-foreground">
             Already have an account?
             <TextLink
                 :href="login()"
