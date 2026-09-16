@@ -7,10 +7,10 @@ use App\Http\Controllers\AttendanceRecordController;
 use App\Http\Controllers\AttendanceSessionController;
 use App\Http\Controllers\ClassRecordController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\GradingComponentController;
-use App\Http\Controllers\GradingItemController;
 use App\Http\Controllers\GradingController;
-use App\Http\Controllers\TransmutationController;
+use App\Http\Controllers\GradingItemController;
 use App\Http\Controllers\ModuleController;
 use App\Http\Controllers\PlagiarismController;
 use App\Http\Controllers\SectionController;
@@ -19,6 +19,7 @@ use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentModuleController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubmissionController;
+use App\Http\Controllers\TransmutationController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -154,5 +155,11 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 Route::get('/health', function () {
     return 'OK';
 });
+
+Route::post('/forgot-password/verify', [ForgotPasswordController::class, 'verify'])
+    ->name('password.verify');
+
+Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'reset'])
+    ->name('password.reset.custom');
 
 require __DIR__.'/settings.php';
