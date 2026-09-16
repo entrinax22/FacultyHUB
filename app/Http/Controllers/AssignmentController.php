@@ -31,7 +31,7 @@ class AssignmentController extends Controller
     }
 
     public function create(Section $section): Response
-    {
+    {   
         $section->load(['subject', 'semester']);
 
         return Inertia::render('assignments/Form', [
@@ -42,7 +42,16 @@ class AssignmentController extends Controller
     }
 
     public function store(Request $request, Section $section): RedirectResponse
-    {
+    {  
+        if (!$section->gradingComponents()->exists()) {
+            return redirect()
+                ->route('sections.assignments.index', $section)
+                ->with(
+                    'warning',
+                    'Please set up your grading components before creating an assignment.'
+                );
+        }
+
         $validated = $this->validateAssignment($request);
         $assignment = $section->assignments()->create($validated);
 

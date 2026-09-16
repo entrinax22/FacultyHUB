@@ -16,13 +16,19 @@ export function initializeFlashToast(): void {
         }
 
         const flash = (event.detail.page.props as any).flash as
-            | { success?: string; error?: string }
+            | {
+                  success?: string;
+                  error?: string;
+                  warning?: string;
+              }
             | undefined;
 
         if (flash?.success) {
             toast.success(flash.success);
         } else if (flash?.error) {
             toast.error(flash.error);
+        } else if (flash?.warning) {
+            toast.warning(flash.warning);
         } else {
             toast.success('Changes saved successfully.');
         }
@@ -38,8 +44,12 @@ export function initializeFlashToast(): void {
         const errors = Object.values(event.detail.errors ?? {}).flat();
         const firstError = errors[0];
 
-        toast.error(typeof firstError === 'string' ? firstError : 'The submission could not be completed.');
+        toast.error(
+            typeof firstError === 'string'
+                ? firstError
+                : 'The submission could not be completed.'
+        );
+
         submittedMethod = null;
     });
-
 }

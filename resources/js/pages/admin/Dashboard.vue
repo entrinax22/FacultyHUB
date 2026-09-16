@@ -1,8 +1,17 @@
+
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import {
-    Users, GraduationCap, Layers, BookOpen, ClipboardList, FileCheck, Loader2, Shield
+    Users,
+    GraduationCap,
+    Layers,
+    BookOpen,
+    ClipboardList,
+    FileCheck,
+    Loader2,
+    Shield,
 } from 'lucide-vue-next';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +44,11 @@ type RecentSection = {
     enrollments_count: number;
 };
 
-type ActiveSemester = { id: number; name: string; school_year: string } | null;
+type ActiveSemester = {
+    id: number;
+    name: string;
+    school_year: string;
+} | null;
 
 defineProps<{
     stats: Stats;
@@ -54,150 +67,438 @@ defineOptions({
 <template>
     <Head title="Admin Dashboard" />
 
-    <div class="flex h-full flex-1 flex-col gap-6 p-4">
+    <div
+        class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
+    >
         <!-- Header -->
-        <div class="flex items-center gap-3">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <Shield class="h-5 w-5 text-primary" />
+        <div
+            class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+            <div class="flex min-w-0 items-start gap-3">
+                <div
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:h-10 sm:w-10"
+                >
+                    <Shield class="h-4 w-4 text-primary sm:h-5 sm:w-5" />
+                </div>
+
+                <div class="min-w-0">
+                    <h1 class="text-xl font-semibold sm:text-2xl">
+                        Admin Dashboard
+                    </h1>
+
+                    <p class="mt-1 text-xs text-muted-foreground sm:text-sm">
+                        System overview ·
+
+                        <span v-if="activeSemester">
+                            Active:
+                            <span class="font-medium text-foreground">
+                                {{ activeSemester.name }}
+                                {{ activeSemester.school_year }}
+                            </span>
+                        </span>
+
+                        <span
+                            v-else
+                            class="text-orange-500"
+                        >
+                            No active semester
+                        </span>
+                    </p>
+                </div>
             </div>
-            <div>
-                <h1 class="text-xl font-semibold">Admin Dashboard</h1>
-                <p class="text-sm text-muted-foreground">
-                    System overview ·
-                    <span v-if="activeSemester">
-                        Active: <span class="font-medium text-foreground">{{ activeSemester.name }} {{ activeSemester.school_year }}</span>
-                    </span>
-                    <span v-else class="text-orange-500">No active semester</span>
-                </p>
-            </div>
-            <div class="ml-auto flex gap-2">
-                <Button size="sm" variant="outline" as-child>
-                    <Link href="/admin/users">Manage Users</Link>
+
+            <!-- Header Actions -->
+            <div class="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                <Button
+                    size="sm"
+                    variant="outline"
+                    as-child
+                    class="w-full"
+                >
+                    <Link href="/admin/users">
+                        <Users class="mr-2 h-4 w-4" />
+                        Manage Users
+                    </Link>
                 </Button>
-                <Button size="sm" as-child>
-                    <Link href="/admin/reports">View Reports</Link>
+
+                <Button
+                    size="sm"
+                    as-child
+                    class="w-full"
+                >
+                    <Link href="/admin/reports">
+                        <FileCheck class="mr-2 h-4 w-4" />
+                        View Reports
+                    </Link>
                 </Button>
             </div>
         </div>
 
-        <!-- Stats grid -->
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Card>
-                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle class="text-sm font-medium">Total Users</CardTitle>
-                    <Users class="h-4 w-4 text-muted-foreground" />
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            <!-- Total Users -->
+            <Card class="min-w-0">
+                <CardHeader
+                    class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
+                >
+                    <CardTitle
+                        class="truncate text-xs font-medium sm:text-sm"
+                    >
+                        Total Users
+                    </CardTitle>
+
+                    <Users
+                        class="h-4 w-4 shrink-0 text-muted-foreground"
+                    />
                 </CardHeader>
-                <CardContent>
-                    <p class="text-3xl font-bold">{{ stats.users }}</p>
-                    <p class="text-xs text-muted-foreground">{{ stats.faculty }} faculty · {{ stats.students }} students</p>
+
+                <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
+                    <p class="text-2xl font-bold sm:text-3xl">
+                        {{ stats.users }}
+                    </p>
+
+                    <p
+                        class="truncate text-[10px] text-muted-foreground sm:text-xs"
+                    >
+                        {{ stats.faculty }} faculty ·
+                        {{ stats.students }} students
+                    </p>
                 </CardContent>
             </Card>
-            <Card>
-                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle class="text-sm font-medium">Sections</CardTitle>
-                    <Layers class="h-4 w-4 text-muted-foreground" />
+
+            <!-- Sections -->
+            <Card class="min-w-0">
+                <CardHeader
+                    class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
+                >
+                    <CardTitle
+                        class="truncate text-xs font-medium sm:text-sm"
+                    >
+                        Sections
+                    </CardTitle>
+
+                    <Layers
+                        class="h-4 w-4 shrink-0 text-muted-foreground"
+                    />
                 </CardHeader>
-                <CardContent>
-                    <p class="text-3xl font-bold">{{ stats.sections }}</p>
-                    <p class="text-xs text-muted-foreground">all time</p>
+
+                <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
+                    <p class="text-2xl font-bold sm:text-3xl">
+                        {{ stats.sections }}
+                    </p>
+
+                    <p class="text-[10px] text-muted-foreground sm:text-xs">
+                        all time
+                    </p>
                 </CardContent>
             </Card>
-            <Card>
-                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle class="text-sm font-medium">Enrollments</CardTitle>
-                    <GraduationCap class="h-4 w-4 text-muted-foreground" />
+
+            <!-- Enrollments -->
+            <Card class="min-w-0">
+                <CardHeader
+                    class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
+                >
+                    <CardTitle
+                        class="truncate text-xs font-medium sm:text-sm"
+                    >
+                        Enrollments
+                    </CardTitle>
+
+                    <GraduationCap
+                        class="h-4 w-4 shrink-0 text-muted-foreground"
+                    />
                 </CardHeader>
-                <CardContent>
-                    <p class="text-3xl font-bold">{{ stats.enrollments }}</p>
-                    <p class="text-xs text-muted-foreground">active</p>
+
+                <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
+                    <p class="text-2xl font-bold sm:text-3xl">
+                        {{ stats.enrollments }}
+                    </p>
+
+                    <p class="text-[10px] text-muted-foreground sm:text-xs">
+                        active
+                    </p>
                 </CardContent>
             </Card>
-            <Card>
-                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle class="text-sm font-medium">Submissions</CardTitle>
-                    <ClipboardList class="h-4 w-4 text-muted-foreground" />
+
+            <!-- Submissions -->
+            <Card class="min-w-0">
+                <CardHeader
+                    class="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2"
+                >
+                    <CardTitle
+                        class="truncate text-xs font-medium sm:text-sm"
+                    >
+                        Submissions
+                    </CardTitle>
+
+                    <ClipboardList
+                        class="h-4 w-4 shrink-0 text-muted-foreground"
+                    />
                 </CardHeader>
-                <CardContent>
-                    <p class="text-3xl font-bold">{{ stats.submissions }}</p>
-                    <div class="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Loader2 v-if="stats.pendingGrading" class="h-3 w-3 animate-spin text-orange-500" />
-                        <span v-if="stats.pendingGrading" class="text-orange-500">{{ stats.pendingGrading }} grading</span>
-                        <span v-else>all graded</span>
+
+                <CardContent class="p-3 pt-1 sm:p-4 sm:pt-1">
+                    <p class="text-2xl font-bold sm:text-3xl">
+                        {{ stats.submissions }}
+                    </p>
+
+                    <div
+                        class="flex min-w-0 items-center gap-1 text-[10px] sm:text-xs"
+                    >
+                        <Loader2
+                            v-if="stats.pendingGrading"
+                            class="h-3 w-3 shrink-0 animate-spin text-orange-500"
+                        />
+
+                        <span
+                            v-if="stats.pendingGrading"
+                            class="truncate text-orange-500"
+                        >
+                            {{ stats.pendingGrading }} grading
+                        </span>
+
+                        <span
+                            v-else
+                            class="text-muted-foreground"
+                        >
+                            all graded
+                        </span>
                     </div>
                 </CardContent>
             </Card>
         </div>
 
-        <div class="grid gap-6 lg:grid-cols-2">
-            <!-- Semester breakdown -->
-            <div class="rounded-xl border bg-card shadow-sm">
-                <div class="border-b px-4 py-3 font-semibold text-sm">Enrollment by Semester</div>
-                <div v-if="semesterStats.length === 0" class="p-6 text-center text-sm text-muted-foreground">No semesters yet.</div>
-                <div v-else class="divide-y">
+        <!-- Semester + Recent Sections -->
+        <div class="grid gap-4 sm:gap-6 lg:grid-cols-2">
+            <!-- Semester Breakdown -->
+            <div class="min-w-0 rounded-xl border bg-card shadow-sm">
+                <div
+                    class="border-b px-4 py-3 text-sm font-semibold"
+                >
+                    Enrollment by Semester
+                </div>
+
+                <div
+                    v-if="semesterStats.length === 0"
+                    class="p-6 text-center text-sm text-muted-foreground"
+                >
+                    No semesters yet.
+                </div>
+
+                <div
+                    v-else
+                    class="divide-y"
+                >
                     <div
                         v-for="sem in semesterStats"
                         :key="sem.id"
-                        class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                        class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                         <div class="min-w-0">
-                            <p class="font-medium truncate">{{ sem.name }} {{ sem.school_year }}</p>
-                            <p class="text-xs text-muted-foreground">{{ sem.sections_count }} sections</p>
+                            <p
+                                class="truncate text-sm font-medium"
+                                :title="`${sem.name} ${sem.school_year}`"
+                            >
+                                {{ sem.name }}
+                                {{ sem.school_year }}
+                            </p>
+
+                            <p class="text-xs text-muted-foreground">
+                                {{ sem.sections_count }}
+                                section{{
+                                    sem.sections_count !== 1 ? 's' : ''
+                                }}
+                            </p>
                         </div>
-                        <div class="shrink-0 flex items-center gap-2">
-                            <Badge v-if="sem.is_active" variant="default" class="text-xs">Active</Badge>
-                            <span class="font-bold">{{ sem.enrollments_count }}</span>
-                            <span class="text-muted-foreground text-xs">enrolled</span>
+
+                        <div
+                            class="flex shrink-0 items-center gap-2 text-sm"
+                        >
+                            <Badge
+                                v-if="sem.is_active"
+                                variant="default"
+                                class="text-xs"
+                            >
+                                Active
+                            </Badge>
+
+                            <span class="font-bold">
+                                {{ sem.enrollments_count }}
+                            </span>
+
+                            <span class="text-xs text-muted-foreground">
+                                enrolled
+                            </span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Recent sections -->
-            <div class="rounded-xl border bg-card shadow-sm">
-                <div class="flex items-center justify-between border-b px-4 py-3">
-                    <span class="font-semibold text-sm">Recent Sections</span>
-                    <Button variant="ghost" size="sm" as-child>
-                        <Link href="/sections">View all</Link>
+            <!-- Recent Sections -->
+            <div class="min-w-0 rounded-xl border bg-card shadow-sm">
+                <div
+                    class="flex items-center justify-between gap-3 border-b px-4 py-3"
+                >
+                    <span class="text-sm font-semibold">
+                        Recent Sections
+                    </span>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        as-child
+                        class="shrink-0"
+                    >
+                        <Link href="/sections">
+                            View all
+                        </Link>
                     </Button>
                 </div>
-                <div v-if="recentSections.length === 0" class="p-6 text-center text-sm text-muted-foreground">No sections yet.</div>
-                <div v-else class="divide-y">
+
+                <div
+                    v-if="recentSections.length === 0"
+                    class="p-6 text-center text-sm text-muted-foreground"
+                >
+                    No sections yet.
+                </div>
+
+                <div
+                    v-else
+                    class="divide-y"
+                >
                     <div
                         v-for="section in recentSections"
                         :key="section.id"
                         class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
                     >
                         <div class="min-w-0">
-                            <p class="font-medium">{{ section.subject_code }} · {{ section.name }}</p>
-                            <p class="text-xs text-muted-foreground truncate">{{ section.faculty_name }} · {{ section.semester }}</p>
+                            <p
+                                class="truncate font-medium"
+                                :title="`${section.subject_code} · ${section.name}`"
+                            >
+                                {{ section.subject_code }} ·
+                                {{ section.name }}
+                            </p>
+
+                            <p
+                                class="truncate text-xs text-muted-foreground"
+                                :title="`${section.faculty_name} · ${section.semester}`"
+                            >
+                                {{ section.faculty_name }} ·
+                                {{ section.semester }}
+                            </p>
                         </div>
+
                         <div class="shrink-0 text-right">
-                            <p class="font-semibold">{{ section.enrollments_count }}</p>
-                            <p class="text-xs text-muted-foreground">students</p>
+                            <p class="font-semibold">
+                                {{ section.enrollments_count }}
+                            </p>
+
+                            <p class="text-xs text-muted-foreground">
+                                students
+                            </p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Quick actions -->
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Link href="/admin/users" class="flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-colors hover:bg-muted/40">
-                <Users class="h-7 w-7 text-primary" />
-                <span class="text-sm font-medium">Users</span>
-            </Link>
-            <Link href="/admin/reports" class="flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-colors hover:bg-muted/40">
-                <FileCheck class="h-7 w-7 text-primary" />
-                <span class="text-sm font-medium">Reports</span>
-            </Link>
-            <Link href="/semesters" class="flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-colors hover:bg-muted/40">
-                <BookOpen class="h-7 w-7 text-primary" />
-                <span class="text-sm font-medium">Semesters</span>
-            </Link>
-            <Link href="/sections" class="flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-colors hover:bg-muted/40">
-                <Layers class="h-7 w-7 text-primary" />
-                <span class="text-sm font-medium">Sections</span>
-            </Link>
+        <!-- Quick Actions -->
+        <div>
+            <div class="mb-3">
+                <h2 class="text-sm font-semibold">
+                    Quick Actions
+                </h2>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <!-- Users -->
+                <Link
+                    href="/admin/users"
+                    class="group flex min-w-0 items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
+                >
+                    <div
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10"
+                    >
+                        <Users class="h-5 w-5 text-primary" />
+                    </div>
+
+                    <div class="min-w-0">
+                        <p class="font-medium">
+                            Manage Users
+                        </p>
+
+                        <p class="truncate text-xs text-muted-foreground">
+                            Manage faculty and student accounts
+                        </p>
+                    </div>
+                </Link>
+
+                <!-- Reports -->
+                <Link
+                    href="/admin/reports"
+                    class="group flex min-w-0 items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
+                >
+                    <div
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10"
+                    >
+                        <FileCheck class="h-5 w-5 text-primary" />
+                    </div>
+
+                    <div class="min-w-0">
+                        <p class="font-medium">
+                            Reports
+                        </p>
+
+                        <p class="truncate text-xs text-muted-foreground">
+                            View system and academic reports
+                        </p>
+                    </div>
+                </Link>
+
+                <!-- Semesters -->
+                <Link
+                    href="/semesters"
+                    class="group flex min-w-0 items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
+                >
+                    <div
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10"
+                    >
+                        <BookOpen class="h-5 w-5 text-primary" />
+                    </div>
+
+                    <div class="min-w-0">
+                        <p class="font-medium">
+                            Semesters
+                        </p>
+
+                        <p class="truncate text-xs text-muted-foreground">
+                            Manage academic semesters
+                        </p>
+                    </div>
+                </Link>
+
+                <!-- Sections -->
+                <Link
+                    href="/sections"
+                    class="group flex min-w-0 items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
+                >
+                    <div
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10"
+                    >
+                        <Layers class="h-5 w-5 text-primary" />
+                    </div>
+
+                    <div class="min-w-0">
+                        <p class="font-medium">
+                            Sections
+                        </p>
+
+                        <p class="truncate text-xs text-muted-foreground">
+                            View and manage sections
+                        </p>
+                    </div>
+                </Link>
+            </div>
         </div>
     </div>
 </template>

@@ -277,10 +277,13 @@ function weightRemaining(w: number) { return (100 - w).toFixed(2); }
                 </div>
                 <div class="grid w-28 gap-1.5">
                     <Label class="text-xs">Period</Label>
-                    <select v-model="addForm.period" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                        <option value="">None</option>
-                        <option value="midterm">Midterm</option>
-                        <option value="finals">Finals</option>
+                    <select
+                        v-model="addForm.period"
+                        class="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                        <option value="" class="bg-white text-black">None</option>
+                        <option value="midterm" class="bg-white text-black">Midterm</option>
+                        <option value="finals" class="bg-white text-black">Finals</option>
                     </select>
                 </div>
                 <Button :disabled="addForm.processing" @click="addComponent">
