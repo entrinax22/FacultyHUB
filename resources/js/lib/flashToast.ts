@@ -53,3 +53,52 @@ export function initializeFlashToast(): void {
         submittedMethod = null;
     });
 }
+
+/**
+ * Show toast based on an Axios JSON response.
+ */
+export function showApiToast(response: any): void {
+    const data = response?.data;
+
+    if (!data) {
+        toast.success('Changes saved successfully.');
+        return;
+    }
+
+    if (data.success) {
+        toast.success(
+            data.message || 'Changes saved successfully.'
+        );
+    } else {
+        toast.error(
+            data.message || 'The request could not be completed.'
+        );
+    }
+}
+
+/**
+ * Show Axios error toast.
+ */
+export function showApiError(error: any): void {
+    const response = error?.response;
+    const data = response?.data;
+
+    // Laravel validation errors
+    if (response?.status === 422 && data?.errors) {
+        const errors = Object.values(data.errors).flat();
+        const firstError = errors[0];
+
+        toast.error(
+            typeof firstError === 'string'
+                ? firstError
+                : 'Please check the submitted information.'
+        );
+
+        return;
+    }
+
+    toast.error(
+        data?.message ||
+        'The request could not be completed.'
+    );
+}

@@ -138,15 +138,33 @@ Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
 // ─── Admin Only ───────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
-    Route::get('users', [AdminController::class, 'users'])->name('users');
-    Route::put('users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
-    Route::get('reports', [AdminController::class, 'reports'])->name('reports');
-    Route::get('ai-settings', [AiSettingsController::class, 'edit'])->name('ai-settings.edit');
-    Route::put('ai-settings', [AiSettingsController::class, 'update'])->name('ai-settings.update');
-    Route::put('ai-settings/providers/{provider}', [AiSettingsController::class, 'updateProvider'])->name('ai-settings.providers.update');
-    Route::post('ai-settings/providers/{provider}/toggle', [AiSettingsController::class, 'toggleProvider'])->name('ai-settings.providers.toggle');
-    Route::post('ai-settings/providers/{provider}/check', [AiSettingsController::class, 'checkProvider'])->name('ai-settings.providers.check');
+    Route::get('/dashboard/data', [AdminController::class, 'dashboardData'])->name('dashboard.data');
 
+    Route::get('/users', [AdminController::class, 'index'])->name('users');
+    Route::get('/users/data', [AdminController::class, 'users'])->name('users.list');
+    Route::put('/users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
+    
+    Route::get('reports', [AdminController::class, 'reports_index'])->name('reports');
+    Route::get('reports/data', [AdminController::class, 'reports'])->name('reports.data');
+
+    Route::get('ai-settings', [AiSettingsController::class, 'edit'])
+        ->name('ai-settings.edit');
+
+    Route::get('ai-settings/data', [AiSettingsController::class, 'data'])
+        ->name('ai-settings.data');
+
+    Route::put('ai-settings', [AiSettingsController::class, 'update'])
+        ->name('ai-settings.update');
+
+    Route::put('ai-settings/providers/{id}', [AiSettingsController::class, 'updateProvider'])
+        ->name('ai-settings.providers.update');
+
+    Route::put('ai-settings/providers/{id}/toggle', [AiSettingsController::class, 'toggleProvider'])
+        ->name('ai-settings.providers.toggle');
+
+    Route::post('ai-settings/providers/{id}/check', [AiSettingsController::class, 'checkProvider'])
+        ->name('ai-settings.providers.check');
+        
     // Semesters — admin only
     Route::resource('semesters', SemesterController::class);
     Route::post('semesters/{semester}/set-active', [SemesterController::class, 'setActive'])->name('semesters.set-active');
