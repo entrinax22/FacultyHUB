@@ -13,41 +13,45 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 type ModuleFile = {
-    id: number;
+    id: string;
     file_name: string;
     file_type: string;
     size_formatted: string;
+    url: string;
 };
 
 type Module = {
-    id: number;
+    id: string;
+    section_id: string;
     title: string;
     description: string | null;
     week_number: number | null;
-    order: number;
-    files: ModuleFile[];
+    is_published: boolean;
     is_read: boolean;
+    files: ModuleFile[];
 };
 
 type Section = {
-    id: number;
+    id: string;
     name: string;
     schedule: string | null;
-    room: string | null;
     subject: {
+        id: string;
         code: string;
         name: string;
-    };
+    } | null;
     semester: {
+        id: string;
         name: string;
         school_year: string;
-    };
+    } | null;
     faculty: {
+        id: string;
         name: string;
-    };
+    } | null;
 };
 
-defineProps<{
+const props = defineProps<{
     section: Section;
     modules: Module[];
     progress: {
@@ -73,7 +77,13 @@ defineOptions({
 </script>
 
 <template>
-    <Head :title="`${section.subject.code} — ${section.name}`" />
+    <Head
+        :title="
+            section.subject
+                ? `${section.subject.code} — ${section.name}`
+                : section.name
+        "
+    />
 
     <div
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
@@ -83,7 +93,9 @@ defineOptions({
         <!-- ============================================================= -->
 
         <div class="flex min-w-0 items-start gap-2 sm:gap-3">
+
             <!-- Back -->
+
             <Button
                 variant="ghost"
                 size="sm"
@@ -92,37 +104,55 @@ defineOptions({
             >
                 <Link href="/my-sections">
                     <ArrowLeft class="h-4 w-4" />
-                    <span class="sr-only">Back to My Classes</span>
+
+                    <span class="sr-only">
+                        Back to My Classes
+                    </span>
                 </Link>
             </Button>
 
             <div class="min-w-0 flex-1 space-y-3">
+
                 <!-- Title + Actions -->
+
                 <div
                     class="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                 >
                     <!-- Title -->
+
                     <div class="min-w-0">
+
                         <h1
                             class="break-words text-xl font-semibold sm:text-2xl"
                         >
-                            {{ section.subject.name }}
+                            {{ section.subject?.name ?? section.name }}
                         </h1>
 
                         <p
                             class="mt-1 break-words text-xs text-muted-foreground sm:text-sm"
                         >
-                            <span class="font-medium text-foreground">
+                            <span
+                                v-if="section.subject"
+                                class="font-medium text-foreground"
+                            >
                                 {{ section.subject.code }}
                             </span>
-                            ·
+
+                            <span v-if="section.subject">
+                                ·
+                            </span>
+
                             {{ section.name }}
-                            ·
-                            {{ section.semester.name }}
-                            {{ section.semester.school_year }}
+
+                            <template v-if="section.semester">
+                                ·
+                                {{ section.semester.name }}
+                                {{ section.semester.school_year }}
+                            </template>
                         </p>
 
                         <!-- Section Details -->
+
                         <div
                             class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
                         >
@@ -134,19 +164,16 @@ defineOptions({
                             </span>
 
                             <span
-                                v-if="section.room"
+                                v-if="section.faculty"
                                 class="break-words"
                             >
-                                {{ section.room }}
-                            </span>
-
-                            <span class="break-words">
                                 {{ section.faculty.name }}
                             </span>
                         </div>
                     </div>
 
                     <!-- Actions -->
+
                     <div
                         class="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto lg:shrink-0"
                     >
@@ -157,11 +184,14 @@ defineOptions({
                             as-child
                         >
                             <Link
-                                :href="`/my-sections/${section.id}/assignments`"
+                                :href="
+                                    `/my-sections/${section.id}/assignments`
+                                "
                             >
                                 <ClipboardList
                                     class="mr-1.5 h-3.5 w-3.5 shrink-0"
                                 />
+
                                 Assignments
                             </Link>
                         </Button>
@@ -173,11 +203,14 @@ defineOptions({
                             as-child
                         >
                             <Link
-                                :href="`/my-sections/${section.id}/grades`"
+                                :href="
+                                    `/my-sections/${section.id}/grades`
+                                "
                             >
                                 <BarChart3
                                     class="mr-1.5 h-3.5 w-3.5 shrink-0"
                                 />
+
                                 My Grades
                             </Link>
                         </Button>
@@ -238,16 +271,27 @@ defineOptions({
         <!-- MODULE LIST -->
         <!-- ============================================================= -->
 
-        <div v-else class="min-w-0 space-y-2">
+        <div
+            v-else
+            class="min-w-0 space-y-2"
+        >
             <Link
                 v-for="mod in modules"
                 :key="mod.id"
-                :href="`/my-sections/${section.id}/modules/${mod.id}`"
+                :href="
+                    `/my-sections/${section.id}/modules/${mod.id}`
+                "
                 class="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-4"
             >
-                <!-- Top row on mobile / Read indicator on desktop -->
-                <div class="flex min-w-0 items-start gap-3 sm:contents">
+                <!-- ===================================================== -->
+                <!-- READ INDICATOR + WEEK -->
+                <!-- ===================================================== -->
+
+                <div
+                    class="flex min-w-0 items-start gap-3 sm:contents"
+                >
                     <!-- Read indicator -->
+
                     <div class="shrink-0 pt-0.5">
                         <CheckCircle
                             v-if="mod.is_read"
@@ -261,9 +305,10 @@ defineOptions({
                     </div>
 
                     <!-- Week badge -->
+
                     <span
                         v-if="mod.week_number"
-                        class="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs font-medium sm:order-none"
+                        class="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
                     >
                         Week {{ mod.week_number }}
                     </span>
@@ -274,6 +319,7 @@ defineOptions({
                 <!-- ===================================================== -->
 
                 <div class="min-w-0 flex-1">
+
                     <p
                         class="break-words font-medium"
                         :class="{
@@ -290,11 +336,15 @@ defineOptions({
                         {{ mod.description }}
                     </p>
 
+                    <!-- Files -->
+
                     <div
                         v-if="mod.files.length"
                         class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
                     >
-                        <FileText class="h-3 w-3 shrink-0" />
+                        <FileText
+                            class="h-3 w-3 shrink-0"
+                        />
 
                         <span>
                             {{ mod.files.length }}
@@ -315,6 +365,7 @@ defineOptions({
                     <CheckCircle
                         class="mr-1 h-3 w-3 shrink-0"
                     />
+
                     Read
                 </Badge>
             </Link>

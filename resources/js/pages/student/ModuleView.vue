@@ -1,5 +1,6 @@
+```vue
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     CheckCircle,
@@ -7,12 +8,17 @@ import {
     FileText,
 } from 'lucide-vue-next';
 import { ref } from 'vue';
+import axios from 'axios';
+import {
+    showApiToast,
+    showApiError,
+} from '@/lib/flashToast';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 type ModuleFile = {
-    id: number;
+    id: string;
     file_name: string;
     file_type: string;
     size_formatted: string;
@@ -20,13 +26,13 @@ type ModuleFile = {
 };
 
 type Module = {
-    id: number;
+    id: string;
     title: string;
     description: string | null;
     week_number: number | null;
     files: ModuleFile[];
     section: {
-        id: number;
+        id: string;
         name: string;
         subject: {
             code: string;
@@ -61,17 +67,22 @@ defineOptions({
 
 const marked = ref(props.isRead);
 
-function markAsRead() {
-    router.post(
-        `/modules/${props.module.id}/mark-read`,
-        {},
-        {
-            preserveScroll: true,
-            onSuccess: () => {
-                marked.value = true;
-            },
-        },
-    );
+async function markAsRead() {
+    try {
+        const response = await axios.post(
+            `/modules/${props.module.id}/mark-read`,
+        );
+
+        showApiToast(response);
+
+        if (response.data.success) {
+            marked.value = true;
+        }
+    } catch (error: any) {
+        console.error('MARK MODULE READ ERROR:', error);
+
+        showApiError(error);
+    }
 }
 </script>
 
@@ -82,14 +93,14 @@ function markAsRead() {
         class="flex min-h-full w-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
         <div class="w-full max-w-3xl space-y-5 sm:space-y-6">
-            <!-- ========================================================= -->
+
             <!-- HEADER -->
-            <!-- ========================================================= -->
 
             <div
                 class="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
             >
                 <!-- Module information -->
+
                 <div class="flex min-w-0 items-start gap-2 sm:gap-3">
                     <Button
                         variant="ghost"
@@ -101,6 +112,7 @@ function markAsRead() {
                             :href="`/my-sections/${module.section.id}`"
                         >
                             <ArrowLeft class="h-4 w-4" />
+
                             <span class="sr-only">
                                 Back to section
                             </span>
@@ -108,7 +120,9 @@ function markAsRead() {
                     </Button>
 
                     <div class="min-w-0 flex-1">
+
                         <!-- Title + badges -->
+
                         <div
                             class="flex min-w-0 flex-wrap items-center gap-2"
                         >
@@ -133,11 +147,13 @@ function markAsRead() {
                                 <CheckCircle
                                     class="mr-1 h-3 w-3 shrink-0"
                                 />
+
                                 Read
                             </Badge>
                         </div>
 
                         <!-- Section -->
+
                         <p
                             class="mt-1 break-words text-xs text-muted-foreground sm:text-sm"
                         >
@@ -151,6 +167,7 @@ function markAsRead() {
                 </div>
 
                 <!-- Mark as read -->
+
                 <Button
                     v-if="!marked"
                     size="sm"
@@ -161,13 +178,12 @@ function markAsRead() {
                     <CheckCircle
                         class="mr-2 h-4 w-4 shrink-0"
                     />
+
                     Mark as Read
                 </Button>
             </div>
 
-            <!-- ========================================================= -->
             <!-- DESCRIPTION -->
-            <!-- ========================================================= -->
 
             <div
                 v-if="module.description"
@@ -180,9 +196,7 @@ function markAsRead() {
                 </p>
             </div>
 
-            <!-- ========================================================= -->
             <!-- FILES -->
-            <!-- ========================================================= -->
 
             <div
                 v-if="module.files.length"
@@ -200,12 +214,10 @@ function markAsRead() {
                     :href="file.url"
                     class="flex min-w-0 items-center gap-3 rounded-xl border bg-card px-3 py-3 transition-colors hover:bg-muted/40 sm:px-4"
                 >
-                    <!-- File icon -->
                     <FileText
                         class="h-5 w-5 shrink-0 text-muted-foreground"
                     />
 
-                    <!-- File information -->
                     <div class="min-w-0 flex-1">
                         <p
                             class="truncate text-sm font-medium"
@@ -214,21 +226,20 @@ function markAsRead() {
                             {{ file.file_name }}
                         </p>
 
-                        <p class="mt-0.5 text-xs text-muted-foreground">
+                        <p
+                            class="mt-0.5 text-xs text-muted-foreground"
+                        >
                             {{ file.size_formatted }}
                         </p>
                     </div>
 
-                    <!-- Download icon -->
                     <Download
                         class="h-4 w-4 shrink-0 text-muted-foreground"
                     />
                 </a>
             </div>
 
-            <!-- ========================================================= -->
             <!-- NO FILES -->
-            <!-- ========================================================= -->
 
             <div
                 v-else
@@ -245,3 +256,4 @@ function markAsRead() {
         </div>
     </div>
 </template>
+```

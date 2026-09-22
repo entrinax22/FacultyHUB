@@ -19,14 +19,14 @@ import {
 } from '@/components/ui/card';
 
 type Enrollment = {
-    id: number;
+    id: string;
     status: string;
     semester: {
         name: string;
         school_year: string;
     };
     section: {
-        id: number;
+        id: string;
         name: string;
         schedule: string | null;
         subject: {
@@ -42,7 +42,7 @@ type Enrollment = {
 };
 
 type Student = {
-    id: number;
+    id: string;
     first_name: string;
     last_name: string;
     student_no: string;
@@ -51,12 +51,12 @@ type Student = {
 };
 
 type UpcomingAssignment = {
-    id: number;
+    id: string;
     title: string;
     due_date: string;
     section_name: string;
     subject_code: string;
-    section_id: number;
+    section_id: string;
 };
 
 type RecentGrade = {
@@ -64,7 +64,13 @@ type RecentGrade = {
     max_score: number;
     assignment_title: string | null;
     subject_code: string | null;
-    section_id: number | null;
+    section_id: string | null;
+};
+
+type ActiveSemester = {
+    id: string;
+    name: string;
+    school_year: string;
 };
 
 defineProps<{
@@ -72,6 +78,7 @@ defineProps<{
     enrollments: Enrollment[];
     upcoming: UpcomingAssignment[];
     recentGrades: RecentGrade[];
+    activeSemester?: ActiveSemester | null;
 }>();
 
 defineOptions({
@@ -88,7 +95,9 @@ defineOptions({
 function daysUntil(date: string): number {
     const diff = new Date(date).getTime() - Date.now();
 
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return Math.ceil(
+        diff / (1000 * 60 * 60 * 24),
+    );
 }
 
 function dueBadgeVariant(
@@ -184,40 +193,48 @@ function dueBadgeVariant(
 
                 <div class="divide-y">
                     <div
-                        v-for="a in upcoming"
-                        :key="a.id"
+                        v-for="assignment in upcoming"
+                        :key="assignment.id"
                         class="flex min-w-0 items-center justify-between gap-3 px-4 py-3 text-sm"
                     >
                         <div class="min-w-0 flex-1">
                             <p
                                 class="truncate font-medium"
-                                :title="a.title"
+                                :title="assignment.title"
                             >
-                                {{ a.title }}
+                                {{ assignment.title }}
                             </p>
 
                             <p
                                 class="mt-0.5 truncate text-xs text-muted-foreground"
                             >
-                                {{ a.subject_code }}
+                                {{ assignment.subject_code }}
                                 ·
-                                {{ a.section_name }}
+                                {{ assignment.section_name }}
                             </p>
                         </div>
 
                         <div class="shrink-0 text-right">
                             <Badge
                                 :variant="
-                                    dueBadgeVariant(a.due_date)
+                                    dueBadgeVariant(
+                                        assignment.due_date,
+                                    )
                                 "
                                 class="text-xs"
                             >
                                 {{
-                                    daysUntil(a.due_date) === 0
+                                    daysUntil(
+                                        assignment.due_date,
+                                    ) === 0
                                         ? 'Today'
-                                        : daysUntil(a.due_date) === 1
+                                        : daysUntil(
+                                              assignment.due_date,
+                                          ) === 1
                                           ? 'Tomorrow'
-                                          : `${daysUntil(a.due_date)}d`
+                                          : `${daysUntil(
+                                                assignment.due_date,
+                                            )}d`
                                 }}
                             </Badge>
 
@@ -226,7 +243,7 @@ function dueBadgeVariant(
                             >
                                 {{
                                     new Date(
-                                        a.due_date,
+                                        assignment.due_date,
                                     ).toLocaleDateString()
                                 }}
                             </p>
@@ -264,34 +281,40 @@ function dueBadgeVariant(
 
                 <div class="divide-y">
                     <div
-                        v-for="(g, i) in recentGrades"
-                        :key="i"
+                        v-for="(grade, index) in recentGrades"
+                        :key="index"
                         class="flex min-w-0 items-center justify-between gap-3 px-4 py-3 text-sm"
                     >
                         <div class="min-w-0 flex-1">
                             <p
                                 class="truncate font-medium"
-                                :title="g.assignment_title ?? 'Grade'"
+                                :title="
+                                    grade.assignment_title ??
+                                    'Grade'
+                                "
                             >
-                                {{ g.assignment_title ?? 'Grade' }}
+                                {{
+                                    grade.assignment_title ??
+                                    'Grade'
+                                }}
                             </p>
 
                             <p
                                 class="mt-0.5 truncate text-xs text-muted-foreground"
                             >
-                                {{ g.subject_code }}
+                                {{ grade.subject_code }}
                             </p>
                         </div>
 
                         <div class="shrink-0 text-right">
                             <div>
                                 <span class="font-bold">
-                                    {{ g.raw_score }}
+                                    {{ grade.raw_score }}
                                 </span>
 
                                 <span class="text-muted-foreground">
                                     /
-                                    {{ g.max_score }}
+                                    {{ grade.max_score }}
                                 </span>
                             </div>
 
@@ -300,8 +323,8 @@ function dueBadgeVariant(
                             >
                                 {{
                                     (
-                                        (g.raw_score /
-                                            g.max_score) *
+                                        (grade.raw_score /
+                                            grade.max_score) *
                                         100
                                     ).toFixed(0)
                                 }}%
@@ -321,6 +344,7 @@ function dueBadgeVariant(
                 class="mb-3 flex items-center gap-2 font-semibold"
             >
                 <GraduationCap class="h-4 w-4 shrink-0" />
+
                 My Enrolled Sections
             </h2>
 
@@ -359,7 +383,9 @@ function dueBadgeVariant(
                                     enrollment.section.subject.code
                                 "
                             >
-                                {{ enrollment.section.subject.code }}
+                                {{
+                                    enrollment.section.subject.code
+                                }}
                             </CardTitle>
 
                             <Badge
@@ -393,6 +419,7 @@ function dueBadgeVariant(
                         <div
                             class="space-y-2 text-xs text-muted-foreground"
                         >
+                            <!-- Section -->
                             <div
                                 class="flex min-w-0 items-start justify-between gap-3"
                             >
@@ -403,10 +430,13 @@ function dueBadgeVariant(
                                 <span
                                     class="break-words text-right font-medium text-foreground"
                                 >
-                                    {{ enrollment.section.name }}
+                                    {{
+                                        enrollment.section.name
+                                    }}
                                 </span>
                             </div>
 
+                            <!-- Schedule -->
                             <div
                                 v-if="enrollment.section.schedule"
                                 class="flex min-w-0 items-start justify-between gap-3"
@@ -418,10 +448,13 @@ function dueBadgeVariant(
                                 <span
                                     class="break-words text-right font-medium text-foreground"
                                 >
-                                    {{ enrollment.section.schedule }}
+                                    {{
+                                        enrollment.section.schedule
+                                    }}
                                 </span>
                             </div>
 
+                            <!-- Semester -->
                             <div
                                 class="flex min-w-0 items-start justify-between gap-3"
                             >
@@ -432,8 +465,13 @@ function dueBadgeVariant(
                                 <span
                                     class="break-words text-right font-medium text-foreground"
                                 >
-                                    {{ enrollment.semester.name }}
-                                    {{ enrollment.semester.school_year }}
+                                    {{
+                                        enrollment.semester.name
+                                    }}
+                                    {{
+                                        enrollment.semester
+                                            .school_year
+                                    }}
                                 </span>
                             </div>
                         </div>
@@ -453,6 +491,7 @@ function dueBadgeVariant(
                                     <BookOpen
                                         class="mr-1.5 h-3.5 w-3.5 shrink-0"
                                     />
+
                                     Modules
                                 </Link>
                             </Button>
@@ -467,6 +506,7 @@ function dueBadgeVariant(
                                     :href="`/my-sections/${enrollment.section.id}/grades`"
                                 >
                                     Grades
+
                                     <ChevronRight
                                         class="ml-1 h-3.5 w-3.5 shrink-0"
                                     />

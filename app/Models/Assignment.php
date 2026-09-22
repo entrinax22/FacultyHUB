@@ -36,7 +36,7 @@ class Assignment extends Model
         return $this->belongsTo(Module::class);
     }
 
-    public function component()
+    public function gradingComponent()
     {
         return $this->belongsTo(GradingComponent::class, 'component_id');
     }

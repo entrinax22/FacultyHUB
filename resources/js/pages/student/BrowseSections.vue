@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+
 import {
     Search,
     BookOpen,
@@ -13,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 type SectionItem = {
-    id: number;
+    id: string;
     name: string;
     schedule: string | null;
     subject_code: string;
@@ -24,26 +25,34 @@ type SectionItem = {
     is_enrolled: boolean;
 };
 
+type ActiveSemester = {
+    id: string;
+    name: string;
+    school_year: string;
+};
+
 const props = defineProps<{
     sections: SectionItem[];
-    activeSemester: {
-        id: number;
-        name: string;
-        school_year: string;
-    } | null;
+    activeSemester: ActiveSemester | null;
 }>();
 
 defineOptions({
     layout: {
         breadcrumbs: [
-            { title: 'My Classes', href: '/my-sections' },
-            { title: 'Browse Sections', href: '/my-sections/browse' },
+            {
+                title: 'My Classes',
+                href: '/my-sections',
+            },
+            {
+                title: 'Browse Sections',
+                href: '/my-sections/browse',
+            },
         ],
     },
 });
 
 const search = ref('');
-const enrolling = ref<number | null>(null);
+const enrolling = ref<string | null>(null);
 
 const filtered = computed(() => {
     const q = search.value.toLowerCase().trim();
@@ -53,21 +62,23 @@ const filtered = computed(() => {
     }
 
     return props.sections.filter(
-        (s) =>
-            s.subject_code.toLowerCase().includes(q) ||
-            s.subject_name.toLowerCase().includes(q) ||
-            s.name.toLowerCase().includes(q) ||
-            s.faculty_name.toLowerCase().includes(q),
+        (section) =>
+            section.subject_code.toLowerCase().includes(q) ||
+            section.subject_name.toLowerCase().includes(q) ||
+            section.name.toLowerCase().includes(q) ||
+            section.faculty_name.toLowerCase().includes(q),
     );
 });
 
-function enroll(sectionId: number) {
+function enroll(sectionId: string) {
     enrolling.value = sectionId;
 
     router.post(
         `/my-sections/${sectionId}/self-enroll`,
         {},
         {
+            preserveScroll: true,
+
             onFinish: () => {
                 enrolling.value = null;
             },
@@ -82,10 +93,7 @@ function enroll(sectionId: number) {
     <div
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-        <!-- ============================================================= -->
-        <!-- HEADER -->
-        <!-- ============================================================= -->
-
+        <!-- Header -->
         <div class="flex min-w-0 items-center gap-3">
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
@@ -115,13 +123,10 @@ function enroll(sectionId: number) {
             </div>
         </div>
 
-        <!-- ============================================================= -->
-        <!-- SEARCH -->
-        <!-- ============================================================= -->
-
+        <!-- Search -->
         <div class="relative w-full sm:max-w-md">
             <Search
-                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             />
 
             <Input
@@ -131,10 +136,7 @@ function enroll(sectionId: number) {
             />
         </div>
 
-        <!-- ============================================================= -->
-        <!-- EMPTY STATE -->
-        <!-- ============================================================= -->
-
+        <!-- Empty State -->
         <div
             v-if="filtered.length === 0"
             class="flex min-h-48 items-center justify-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground sm:min-h-56"
@@ -150,10 +152,7 @@ function enroll(sectionId: number) {
             </div>
         </div>
 
-        <!-- ============================================================= -->
-        <!-- SECTION GRID -->
-        <!-- ============================================================= -->
-
+        <!-- Section Grid -->
         <div
             v-else
             class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3"
@@ -168,10 +167,7 @@ function enroll(sectionId: number) {
                         : 'hover:bg-muted/20'
                 "
             >
-                <!-- ===================================================== -->
-                <!-- CARD HEADER -->
-                <!-- ===================================================== -->
-
+                <!-- Card Header -->
                 <div
                     class="flex min-w-0 items-start justify-between gap-3"
                 >
@@ -195,14 +191,12 @@ function enroll(sectionId: number) {
                         <CheckCircle
                             class="mr-1 h-3 w-3 shrink-0"
                         />
+
                         Enrolled
                     </Badge>
                 </div>
 
-                <!-- ===================================================== -->
-                <!-- CARD DETAILS -->
-                <!-- ===================================================== -->
-
+                <!-- Card Details -->
                 <div
                     class="mt-4 flex-1 space-y-2 text-xs text-muted-foreground"
                 >
@@ -245,10 +239,7 @@ function enroll(sectionId: number) {
                     </p>
                 </div>
 
-                <!-- ===================================================== -->
-                <!-- ACTION -->
-                <!-- ===================================================== -->
-
+                <!-- Action -->
                 <div class="mt-4 border-t pt-4">
                     <Button
                         v-if="!section.is_enrolled"
@@ -271,6 +262,7 @@ function enroll(sectionId: number) {
                         <CheckCircle
                             class="mr-1.5 h-3.5 w-3.5"
                         />
+
                         You are enrolled in this section
                     </p>
                 </div>

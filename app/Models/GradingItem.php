@@ -35,5 +35,13 @@ class GradingItem extends Model
     {
         return $this->hasMany(GradingItemScore::class);
     }
+
+    public function assignment()
+    {
+        return $this->belongsTo(
+            Assignment::class,
+            'assignment_id'
+        );
+    }
 }
 

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
+import axios from 'axios';
+import { reactive, ref, watch } from 'vue';
 import { Layers } from 'lucide-vue-next';
 
 import { Button } from '@/components/ui/button';
@@ -15,27 +17,31 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
+import { showApiToast, showApiError } from '@/lib/flashToast';
+
 type Semester = {
-    id: number;
+    id: string;
     name: string;
     school_year: string;
     is_active: boolean;
 };
 
 type Subject = {
-    id: number;
+    id: string;
     code: string;
     name: string;
 };
 
 type Section = {
-    id: number;
+    id: string;
     name: string;
-    semester_id: number;
-    subject_id: number;
+    semester_id: string;
+    subject_id: string;
     schedule: string | null;
     room: string | null;
 };
+
+type FormErrors = Record<string, string>;
 
 const props = defineProps<{
     section?: Section;
@@ -52,19 +58,57 @@ defineOptions({
     },
 });
 
-const form = useForm({
+/*
+|--------------------------------------------------------------------------
+| FORM
+|--------------------------------------------------------------------------
+*/
+const form = reactive({
     name: props.section?.name ?? '',
-    semester_id: props.section?.semester_id?.toString() ?? '',
-    subject_id: props.section?.subject_id?.toString() ?? '',
+    semester_id: props.section?.semester_id ?? '',
+    subject_id: props.section?.subject_id ?? '',
     schedule: props.section?.schedule ?? '',
     room: props.section?.room ?? '',
 });
 
-function submit() {
-    if (props.section) {
-        form.put(`/sections/${props.section.id}`);
-    } else {
-        form.post('/sections');
+const errors = ref<FormErrors>({});
+const processing = ref(false);
+
+/*
+|--------------------------------------------------------------------------
+| SUBMIT
+|--------------------------------------------------------------------------
+*/
+
+async function submit() {
+    processing.value = true;
+    errors.value = {};
+
+    try {
+        let response;
+
+        if (props.section) {
+            response = await axios.put(
+                `/sections/update/${props.section.id}`,
+                form,
+            );
+        } else {
+            response = await axios.post('/sections/store', form);
+        }
+
+        showApiToast(response);
+
+        window.location.href = '/sections';
+    } catch (error: any) {
+        if (error.response?.status === 422) {
+            errors.value = error.response.data.errors ?? {};
+            return;
+        }
+
+        console.error('Section save error:', error);
+        showApiError(error);
+    } finally {
+        processing.value = false;
     }
 }
 </script>
@@ -105,9 +149,7 @@ function submit() {
         >
             <!-- SECTION NAME -->
             <div class="grid gap-1.5">
-                <Label for="name">
-                    Section Name
-                </Label>
+                <Label for="name"> Section Name </Label>
 
                 <Input
                     id="name"
@@ -117,19 +159,14 @@ function submit() {
                     required
                 />
 
-                <InputError :message="form.errors.name" />
+                <InputError :message="errors.name" />
             </div>
 
             <!-- SEMESTER -->
             <div class="grid gap-1.5">
-                <Label>
-                    Semester
-                </Label>
+                <Label> Semester </Label>
 
-                <Select
-                    v-model="form.semester_id"
-                    required
-                >
+                <Select v-model="form.semester_id" required>
                     <SelectTrigger class="w-full">
                         <SelectValue placeholder="Select a semester" />
                     </SelectTrigger>
@@ -138,10 +175,9 @@ function submit() {
                         <SelectItem
                             v-for="sem in semesters"
                             :key="sem.id"
-                            :value="sem.id.toString()"
+                            :value="sem.id"
                         >
-                            {{ sem.name }}
-                            {{ sem.school_year }}
+                            {{ sem.name }} {{ sem.school_year }}
 
                             <span
                                 v-if="sem.is_active"
@@ -153,19 +189,14 @@ function submit() {
                     </SelectContent>
                 </Select>
 
-                <InputError :message="form.errors.semester_id" />
+                <InputError :message="errors.semester_id" />
             </div>
 
             <!-- SUBJECT -->
             <div class="grid gap-1.5">
-                <Label>
-                    Subject
-                </Label>
+                <Label> Subject </Label>
 
-                <Select
-                    v-model="form.subject_id"
-                    required
-                >
+                <Select v-model="form.subject_id" required>
                     <SelectTrigger class="w-full">
                         <SelectValue placeholder="Select a subject" />
                     </SelectTrigger>
@@ -174,14 +205,14 @@ function submit() {
                         <SelectItem
                             v-for="sub in subjects"
                             :key="sub.id"
-                            :value="sub.id.toString()"
+                            :value="sub.id"
                         >
                             {{ sub.code }} — {{ sub.name }}
                         </SelectItem>
                     </SelectContent>
                 </Select>
 
-                <InputError :message="form.errors.subject_id" />
+                <InputError :message="errors.subject_id" />
             </div>
 
             <!-- SCHEDULE / ROOM -->
@@ -189,9 +220,7 @@ function submit() {
                 <div class="grid min-w-0 gap-1.5">
                     <Label for="schedule">
                         Schedule
-                        <span class="text-muted-foreground">
-                            (optional)
-                        </span>
+                        <span class="text-muted-foreground"> (optional) </span>
                     </Label>
 
                     <Input
@@ -201,15 +230,13 @@ function submit() {
                         placeholder="e.g. MWF 1:00–2:30 PM"
                     />
 
-                    <InputError :message="form.errors.schedule" />
+                    <InputError :message="errors.schedule" />
                 </div>
 
                 <div class="grid min-w-0 gap-1.5">
                     <Label for="room">
                         Room
-                        <span class="text-muted-foreground">
-                            (optional)
-                        </span>
+                        <span class="text-muted-foreground"> (optional) </span>
                     </Label>
 
                     <Input
@@ -219,7 +246,7 @@ function submit() {
                         placeholder="e.g. Room 301"
                     />
 
-                    <InputError :message="form.errors.room" />
+                    <InputError :message="errors.room" />
                 </div>
             </div>
 
@@ -230,23 +257,13 @@ function submit() {
                 <Button
                     type="submit"
                     class="w-full sm:w-auto"
-                    :disabled="form.processing"
+                    :disabled="processing"
                 >
-                    {{
-                        section
-                            ? 'Update Section'
-                            : 'Create Section'
-                    }}
+                    {{ section ? 'Update Section' : 'Create Section' }}
                 </Button>
 
-                <Button
-                    variant="outline"
-                    class="w-full sm:w-auto"
-                    as-child
-                >
-                    <Link href="/sections">
-                        Cancel
-                    </Link>
+                <Button variant="outline" class="w-full sm:w-auto" as-child>
+                    <Link href="/sections"> Cancel </Link>
                 </Button>
             </div>
         </form>

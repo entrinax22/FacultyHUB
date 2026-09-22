@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import {
-    ChevronLeft,
-    ChevronRight,
-} from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
 
 type Column = {
     key: string;
@@ -60,9 +57,7 @@ const showingFrom = computed(() => {
 
     return (
         props.pagination.from ??
-        (props.pagination.current_page - 1) *
-            props.pagination.per_page +
-            1
+        (props.pagination.current_page - 1) * props.pagination.per_page + 1
     );
 });
 
@@ -80,8 +75,7 @@ const showingTo = computed(() => {
     return (
         props.pagination.to ??
         Math.min(
-            props.pagination.current_page *
-                props.pagination.per_page,
+            props.pagination.current_page * props.pagination.per_page,
             props.pagination.total,
         )
     );
@@ -112,10 +106,7 @@ const pageNumbers = computed<(number | 'ellipsis')[]>(() => {
 
     // Show everything when there are only a few pages
     if (last <= 7) {
-        return Array.from(
-            { length: last },
-            (_, index) => index + 1,
-        );
+        return Array.from({ length: last }, (_, index) => index + 1);
     }
 
     const pages: (number | 'ellipsis')[] = [];
@@ -145,13 +136,7 @@ const pageNumbers = computed<(number | 'ellipsis')[]>(() => {
 
     if (current >= last - 3) {
         pages.push('ellipsis');
-        pages.push(
-            last - 4,
-            last - 3,
-            last - 2,
-            last - 1,
-            last,
-        );
+        pages.push(last - 4, last - 3, last - 2, last - 1, last);
 
         return pages;
     }
@@ -232,9 +217,7 @@ function changePerPage(value: string) {
 </script>
 
 <template>
-    <div
-        class="overflow-hidden rounded-xl border bg-card shadow-sm"
-    >
+    <div class="overflow-hidden rounded-xl border bg-card shadow-sm">
         <!-- =========================================================
              TOOLBAR
         ========================================================== -->
@@ -257,7 +240,7 @@ function changePerPage(value: string) {
                 <select
                     :value="pagination?.per_page"
                     :disabled="loading"
-                    class="h-8 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    class="h-8 min-w-[70px] appearance-auto rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground focus:ring-1 focus:ring-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                     @change="
                         changePerPage(
                             ($event.target as HTMLSelectElement).value,
@@ -268,6 +251,7 @@ function changePerPage(value: string) {
                         v-for="option in perPageOptions"
                         :key="option"
                         :value="option"
+                        class="bg-background text-foreground"
                     >
                         {{ option }}
                     </option>
@@ -281,13 +265,14 @@ function changePerPage(value: string) {
              TABLE
         ========================================================== -->
         <div class="relative overflow-x-auto">
-
             <!-- Loading overlay -->
             <div
                 v-if="loading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px]"
             >
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                <div
+                    class="flex items-center gap-2 text-sm text-muted-foreground"
+                >
                     <div
                         class="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary"
                     />
@@ -304,10 +289,7 @@ function changePerPage(value: string) {
                             v-for="column in columns"
                             :key="column.key"
                             class="px-4 py-3 text-left font-medium"
-                            :class="[
-                                column.class,
-                                column.headerClass,
-                            ]"
+                            :class="[column.class, column.headerClass]"
                         >
                             <slot
                                 :name="`header-${column.key}`"
@@ -321,7 +303,6 @@ function changePerPage(value: string) {
 
                 <!-- Body -->
                 <tbody class="divide-y">
-
                     <!-- Empty -->
                     <tr v-if="data.length === 0 && !loading">
                         <td
@@ -364,11 +345,7 @@ function changePerPage(value: string) {
              PAGINATION
         ========================================================== -->
         <div
-            v-if="
-                showPagination &&
-                pagination &&
-                pagination.total > 0
-            "
+            v-if="showPagination && pagination && pagination.total > 0"
             class="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
         >
             <!-- Results count -->
@@ -403,10 +380,7 @@ function changePerPage(value: string) {
                 <button
                     type="button"
                     class="inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-                    :disabled="
-                        loading ||
-                        pagination.current_page === 1
-                    "
+                    :disabled="loading || pagination.current_page === 1"
                     @click="previousPage"
                 >
                     <ChevronLeft class="h-4 w-4" />
@@ -434,10 +408,7 @@ function changePerPage(value: string) {
                             'border-primary bg-primary text-primary-foreground hover:bg-primary':
                                 page === pagination.current_page,
                         }"
-                        :disabled="
-                            loading ||
-                            page === pagination.current_page
-                        "
+                        :disabled="loading || page === pagination.current_page"
                         @click="changePage(page)"
                     >
                         {{ page }}
@@ -450,8 +421,7 @@ function changePerPage(value: string) {
                     class="inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
                     :disabled="
                         loading ||
-                        pagination.current_page ===
-                            pagination.last_page
+                        pagination.current_page === pagination.last_page
                     "
                     @click="nextPage"
                 >
@@ -464,10 +434,7 @@ function changePerPage(value: string) {
              SINGLE PAGE
         ========================================================== -->
         <div
-            v-else-if="
-                pagination &&
-                pagination.total > 0
-            "
+            v-else-if="pagination && pagination.total > 0"
             class="border-t px-4 py-3"
         >
             <p class="text-sm text-muted-foreground">

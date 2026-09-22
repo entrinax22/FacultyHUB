@@ -6,9 +6,10 @@ use App\Concerns\ResolvesStudent;
 use App\Models\Module;
 use App\Models\ModuleFile;
 use App\Models\Section;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,43 +18,203 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ModuleController extends Controller
 {
     use ResolvesStudent;
-    public function index(Section $section): Response
-    {
-        $section->load(['subject', 'semester']);
-        $modules = $section->modules()->with('files')->get();
 
-        return Inertia::render('modules/Index', [
-            'section' => $section,
-            'modules' => $modules,
-        ]);
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    private function resolveSection(string $id): Section
+    {
+        try {
+            $sectionId = Crypt::decryptString($id);
+
+            return Section::findOrFail($sectionId);
+        } catch (DecryptException $e) {
+            abort(404);
+        }
     }
 
-    public function create(Section $section): Response
+    private function resolveModule(string $id): Module
     {
-        $section->load(['subject', 'semester']);
+        try {
+            $moduleId = Crypt::decryptString($id);
 
-        return Inertia::render('modules/Form', [
-            'section' => $section,
-        ]);
+            return Module::findOrFail($moduleId);
+        } catch (DecryptException $e) {
+            abort(404);
+        }
+    }
+
+    private function resolveModuleFile(string $id): ModuleFile
+    {
+        try {
+            $fileId = Crypt::decryptString($id);
+
+            return ModuleFile::findOrFail($fileId);
+        } catch (DecryptException $e) {
+            abort(404);
+        }
     }
 
     private function fileDisk(): string
     {
-        return config('filesystems.default') === 's3' ? 's3' : 'public';
+        return config('filesystems.default') === 's3'
+            ? 's3'
+            : 'public';
     }
 
-    public function store(Request $request, Section $section): RedirectResponse
+    /*
+    |--------------------------------------------------------------------------
+    | Pages
+    |--------------------------------------------------------------------------
+    */
+
+    public function index(string $sectionId): Response
     {
+        $section = $this->resolveSection($sectionId);
+
+        $section->load([
+            'subject',
+            'semester',
+        ]);
+
+        $modules = $section->modules()
+            ->with('files')
+            ->orderBy('order')
+            ->get();
+
+        return Inertia::render('modules/Index', [
+            'section' => $this->transformSection($section),
+            'modules' => $modules->map(
+                fn ($module) => $this->transformModule($module)
+            )->values()->all(),
+        ]);
+    }
+
+    public function create(string $sectionId): Response
+    {
+        $section = $this->resolveSection($sectionId);
+
+        $section->load([
+            'subject',
+            'semester',
+        ]);
+
+        return Inertia::render('modules/Form', [
+            'section' => [
+                'id' => Crypt::encryptString((string) $section->id),
+                'name' => $section->name,
+                'schedule' => $section->schedule,
+                'subject' => $section->subject ? [
+                    'id' => Crypt::encryptString(
+                        (string) $section->subject->id
+                    ),
+                    'code' => $section->subject->code,
+                    'name' => $section->subject->name,
+                ] : null,
+                'semester' => $section->semester ? [
+                    'id' => Crypt::encryptString(
+                        (string) $section->semester->id
+                    ),
+                    'name' => $section->semester->name,
+                    'school_year' => $section->semester->school_year,
+                ] : null,
+            ],
+        ]);
+    }
+
+    public function show(string $id): Response
+    {
+        $module = $this->resolveModule($id);
+
+        $module->load([
+            'files',
+            'section.subject',
+            'section.semester',
+        ]);
+
+        $moduleData = $this->transformModule($module);
+
+        $moduleData['section'] = $this->transformSection($module->section);
+
+        return Inertia::render('modules/Show', [
+            'module' => $moduleData,
+        ]);
+    }
+
+    public function edit(string $id): Response
+    {
+        $module = $this->resolveModule($id);
+
+        $module->load([
+            'files',
+            'section.subject',
+            'section.semester',
+        ]);
+
+        return Inertia::render('modules/Form', [
+            'module' => $this->transformModule($module),
+            'section' => $this->transformSection($module->section),
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Data
+    |--------------------------------------------------------------------------
+    */
+
+    public function modules_data(
+        Request $request,
+        string $sectionId
+    ): JsonResponse {
+        $section = $this->resolveSection($sectionId);
+
+        $modules = $section->modules()
+            ->with('files')
+            ->orderBy('order')
+            ->orderBy('id')
+            ->get();
+
+        $modules = $modules->map(
+            fn (Module $module) => $this->transformModule($module)
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modules retrieved successfully.',
+            'data' => $modules,
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Store
+    |--------------------------------------------------------------------------
+    */
+
+    public function store(
+        Request $request,
+        string $sectionId
+    ): JsonResponse {
+        $section = $this->resolveSection($sectionId);
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'week_number' => 'nullable|integer|min:1|max:52',
             'is_published' => 'boolean',
             'files' => 'nullable|array|max:10',
-            'files.*' => 'file|max:51200|mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,txt,zip,jpg,jpeg,png,gif,webp',
+            'files.*' => [
+                'file',
+                'max:51200',
+                'mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,txt,zip,jpg,jpeg,png,gif,webp',
+            ],
         ]);
 
-        $nextOrder = $section->modules()->max('order') + 1;
+        $nextOrder = ($section->modules()->max('order') ?? 0) + 1;
 
         $module = $section->modules()->create([
             'title' => $validated['title'],
@@ -65,7 +226,11 @@ class ModuleController extends Controller
 
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $path = $file->store("modules/{$module->id}", $this->fileDisk());
+                $path = $file->store(
+                    "modules/{$module->id}",
+                    $this->fileDisk()
+                );
+
                 $module->files()->create([
                     'file_name' => $file->getClientOriginalName(),
                     'file_path' => $path,
@@ -75,39 +240,42 @@ class ModuleController extends Controller
             }
         }
 
-        return redirect()
-            ->route('sections.modules.index', $section)
-            ->with('success', 'Module created successfully.');
-    }
-
-    public function show(Module $module): Response
-    {
-        $module->load(['files', 'section.subject', 'section.semester']);
-
-        return Inertia::render('modules/Show', [
-            'module' => $module,
+        $module->load([
+            'files',
+            'section.subject',
+            'section.semester',
         ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Module created successfully.',
+            'data' => $this->transformModule($module),
+        ], 201);
     }
 
-    public function edit(Module $module): Response
-    {
-        $module->load(['files', 'section.subject', 'section.semester']);
+    /*
+    |--------------------------------------------------------------------------
+    | Update
+    |--------------------------------------------------------------------------
+    */
 
-        return Inertia::render('modules/Form', [
-            'module' => $module,
-            'section' => $module->section,
-        ]);
-    }
+    public function update(
+        Request $request,
+        string $id
+    ): JsonResponse {
+        $module = $this->resolveModule($id);
 
-    public function update(Request $request, Module $module): RedirectResponse
-    {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'week_number' => 'nullable|integer|min:1|max:52',
             'is_published' => 'boolean',
             'files' => 'nullable|array|max:10',
-            'files.*' => 'file|max:51200|mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,txt,zip,jpg,jpeg,png,gif,webp',
+            'files.*' => [
+                'file',
+                'max:51200',
+                'mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,txt,zip,jpg,jpeg,png,gif,webp',
+            ],
         ]);
 
         $module->update([
@@ -119,7 +287,11 @@ class ModuleController extends Controller
 
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $path = $file->store("modules/{$module->id}", $this->fileDisk());
+                $path = $file->store(
+                    "modules/{$module->id}",
+                    $this->fileDisk()
+                );
+
                 $module->files()->create([
                     'file_name' => $file->getClientOriginalName(),
                     'file_path' => $path,
@@ -129,55 +301,115 @@ class ModuleController extends Controller
             }
         }
 
-        return redirect()
-            ->route('sections.modules.index', $module->section_id)
-            ->with('success', 'Module updated successfully.');
+        $module->load([
+            'files',
+            'section.subject',
+            'section.semester',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Module updated successfully.',
+            'data' => $this->transformModule($module),
+        ]);
     }
 
-    public function destroy(Module $module): RedirectResponse
+    /*
+    |--------------------------------------------------------------------------
+    | Delete
+    |--------------------------------------------------------------------------
+    */
+
+    public function destroy(string $id): JsonResponse
     {
-        $sectionId = $module->section_id;
+        $module = $this->resolveModule($id);
 
         foreach ($module->files as $file) {
-            Storage::disk($this->fileDisk())->delete($file->file_path);
+            Storage::disk($this->fileDisk())
+                ->delete($file->file_path);
         }
 
         $module->delete();
 
-        return redirect()
-            ->route('sections.modules.index', $sectionId)
-            ->with('success', 'Module deleted.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Module deleted successfully.',
+        ]);
     }
 
-    public function togglePublish(Module $module): RedirectResponse
+    /*
+    |--------------------------------------------------------------------------
+    | Publish
+    |--------------------------------------------------------------------------
+    */
+
+    public function togglePublish(string $id): JsonResponse
     {
-        $module->update(['is_published' => ! $module->is_published]);
+        $module = $this->resolveModule($id);
 
-        $status = $module->is_published ? 'published' : 'set to draft';
+        $module->update([
+            'is_published' => ! $module->is_published,
+        ]);
 
-        return back()->with('success', "\"{$module->title}\" {$status}.");
+        $status = $module->is_published
+            ? 'published'
+            : 'set to draft';
+
+        return response()->json([
+            'success' => true,
+            'message' => "\"{$module->title}\" {$status}.",
+            'data' => [
+                'id' => Crypt::encryptString((string) $module->id),
+                'is_published' => $module->is_published,
+            ],
+        ]);
     }
 
-    public function destroyFile(ModuleFile $moduleFile): RedirectResponse
+    /*
+    |--------------------------------------------------------------------------
+    | Delete File
+    |--------------------------------------------------------------------------
+    */
+
+    public function destroyFile(string $id): JsonResponse
     {
-        Storage::disk($this->fileDisk())->delete($moduleFile->file_path);
-        $sectionId = $moduleFile->module->section_id;
-        $moduleId = $moduleFile->module_id;
+        $moduleFile = $this->resolveModuleFile($id);
+
+        Storage::disk($this->fileDisk())
+            ->delete($moduleFile->file_path);
+
         $moduleFile->delete();
 
-        return redirect()
-            ->route('modules.edit', $moduleId)
-            ->with('success', 'File removed.');
+        return response()->json([
+            'success' => true,
+            'message' => 'File removed successfully.',
+        ]);
     }
 
-    public function serveFile(Request $request, ModuleFile $moduleFile): StreamedResponse|RedirectResponse
-    {
-        $module = $moduleFile->module;
-        $user   = $request->user();
+    /*
+    |--------------------------------------------------------------------------
+    | Serve File
+    |--------------------------------------------------------------------------
+    */
 
-        // Students: must be enrolled and module must be published
+    public function serveFile(
+        Request $request,
+        string $id
+    ): StreamedResponse|\Illuminate\Http\RedirectResponse {
+        $moduleFile = $this->resolveModuleFile($id);
+
+        $module = $moduleFile->module;
+        $user = $request->user();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Student Access
+        |--------------------------------------------------------------------------
+        */
+
         if ($user->isStudent()) {
-            $student  = $this->resolveStudent($request);
+            $student = $this->resolveStudent($request);
+
             $enrolled = $student->enrollments()
                 ->where('section_id', $module->section_id)
                 ->where('status', 'active')
@@ -190,43 +422,150 @@ class ModuleController extends Controller
 
         $disk = $this->fileDisk();
 
-        // S3 / R2: redirect to a short-lived signed URL
-        if ($disk === 's3') {
-            /** @var \Illuminate\Filesystem\FilesystemAdapter $s3 */
-            $s3 = Storage::disk('s3');
-            return redirect($s3->temporaryUrl($moduleFile->file_path, now()->addMinutes(30)));
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | S3 / R2
+        |--------------------------------------------------------------------------
+        */
 
-        // Local public disk: stream with inline disposition so browser previews it
-        $absolutePath = Storage::disk('public')->path($moduleFile->file_path);
+        if ($disk === 's3') {
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $s3 */
+        $s3 = Storage::disk('s3');
+
+        return redirect(
+            $s3->temporaryUrl(
+                $moduleFile->file_path,
+                now()->addMinutes(30)
+            )
+        );
+    }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Local Storage
+        |--------------------------------------------------------------------------
+        */
+
+        $absolutePath = Storage::disk('public')
+            ->path($moduleFile->file_path);
 
         if (! file_exists($absolutePath)) {
             abort(404);
         }
 
-        $mime     = $moduleFile->file_type ?: mime_content_type($absolutePath) ?: 'application/octet-stream';
+        $mime = $moduleFile->file_type
+            ?: mime_content_type($absolutePath)
+            ?: 'application/octet-stream';
+
         $filename = $moduleFile->file_name;
 
-        return response()->streamDownload(function () use ($absolutePath) {
-            readfile($absolutePath);
-        }, $filename, [
-            'Content-Type'        => $mime,
-            'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
-            'Cache-Control'       => 'private, max-age=3600',
+        return response()->streamDownload(
+            function () use ($absolutePath) {
+                readfile($absolutePath);
+            },
+            $filename,
+            [
+                'Content-Type' => $mime,
+                'Content-Disposition' =>
+                    'attachment; filename="' .
+                    addslashes($filename) .
+                    '"',
+                'Cache-Control' => 'private, max-age=3600',
+            ]
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reorder
+    |--------------------------------------------------------------------------
+    */
+
+    public function reorder(
+        Request $request,
+        string $sectionId
+    ): JsonResponse {
+        $section = $this->resolveSection($sectionId);
+
+        $validated = $request->validate([
+            'order' => 'required|array',
+            'order.*' => 'required|string',
+        ]);
+
+        foreach ($validated['order'] as $position => $encryptedModuleId) {
+            try {
+                $moduleId = Crypt::decryptString($encryptedModuleId);
+            } catch (DecryptException $e) {
+                continue;
+            }
+
+            $section->modules()
+                ->where('id', $moduleId)
+                ->update([
+                    'order' => $position,
+                ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modules reordered successfully.',
         ]);
     }
 
-    public function reorder(Request $request, Section $section): RedirectResponse
+    /*
+    |--------------------------------------------------------------------------
+    | Transformers
+    |--------------------------------------------------------------------------
+    */
+
+    private function transformSection(Section $section): array
     {
-        $validated = $request->validate([
-            'order' => 'required|array',
-            'order.*' => 'integer|exists:modules,id',
-        ]);
+        return [
+            'id' => Crypt::encryptString((string) $section->id),
+            'name' => $section->name,
 
-        foreach ($validated['order'] as $position => $moduleId) {
-            $section->modules()->where('id', $moduleId)->update(['order' => $position]);
-        }
+            'subject' => [
+                'id' => $section->subject
+                    ? Crypt::encryptString((string) $section->subject->id)
+                    : null,
+                'code' => $section->subject?->code,
+                'name' => $section->subject?->name,
+            ],
 
-        return back()->with('success', 'Modules reordered.');
+            'semester' => [
+                'id' => $section->semester
+                    ? Crypt::encryptString((string) $section->semester->id)
+                    : null,
+                'name' => $section->semester?->name,
+                'school_year' => $section->semester?->school_year,
+            ],
+        ];
+    }
+
+    private function transformModule(Module $module): array
+    {
+        return [
+            'id' => Crypt::encryptString((string) $module->id),
+            'title' => $module->title,
+            'description' => $module->description,
+            'week_number' => $module->week_number,
+            'order' => $module->order,
+            'is_published' => (bool) $module->is_published,
+
+            'files' => $module->files->map(function ($file) {
+                $encryptedId = Crypt::encryptString((string) $file->id);
+
+                return [
+                    'id' => $encryptedId,
+                    'file_name' => $file->file_name,
+                    'file_type' => $file->file_type,
+                    'file_size' => $file->file_size,
+                    'file_url' => route(
+                        'modules.files.serve',
+                        $encryptedId
+                    ),
+                ];
+            })->values()->all(),
+        ];
     }
 }

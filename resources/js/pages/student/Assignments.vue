@@ -16,14 +16,14 @@ type Grade = {
 };
 
 type Submission = {
-    id: number;
+    id: string;
     status: string;
     submitted_at: string;
     grade: Grade | null;
 };
 
 type Assignment = {
-    id: number;
+    id: string;
     title: string;
     type: string;
     max_score: number;
@@ -34,7 +34,7 @@ type Assignment = {
 };
 
 type Section = {
-    id: number;
+    id: string;
     name: string;
     subject: {
         code: string;
@@ -54,8 +54,14 @@ defineProps<{
 defineOptions({
     layout: {
         breadcrumbs: [
-            { title: 'My Classes', href: '/my-sections' },
-            { title: 'Assignments', href: '#' },
+            {
+                title: 'My Classes',
+                href: '/my-sections',
+            },
+            {
+                title: 'Assignments',
+                href: '#',
+            },
         ],
     },
 });
@@ -81,13 +87,8 @@ function isPastDue(dueDate: string | null): boolean {
     <div
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-        <!-- ============================================================= -->
-        <!-- HEADER -->
-        <!-- ============================================================= -->
-
-        <div
-            class="flex min-w-0 items-start gap-2 sm:gap-3"
-        >
+        <!-- Header -->
+        <div class="flex min-w-0 items-start gap-2 sm:gap-3">
             <Button
                 variant="ghost"
                 size="sm"
@@ -120,10 +121,7 @@ function isPastDue(dueDate: string | null): boolean {
             </div>
         </div>
 
-        <!-- ============================================================= -->
-        <!-- EMPTY STATE -->
-        <!-- ============================================================= -->
-
+        <!-- Empty State -->
         <div
             v-if="assignments.length === 0"
             class="flex min-h-48 items-center justify-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground sm:min-h-56"
@@ -131,27 +129,22 @@ function isPastDue(dueDate: string | null): boolean {
             No assignments posted yet.
         </div>
 
-        <!-- ============================================================= -->
-        <!-- ASSIGNMENTS -->
-        <!-- ============================================================= -->
-
+        <!-- Assignments -->
         <div
             v-else
             class="space-y-3"
         >
             <div
-                v-for="a in assignments"
-                :key="a.id"
+                v-for="assignment in assignments"
+                :key="assignment.id"
                 class="min-w-0 space-y-4 rounded-xl border bg-card p-4 transition-colors sm:p-5"
                 :class="{
                     'border-red-200 bg-red-50/30':
-                        isPastDue(a.due_date) && !a.my_submission,
+                        isPastDue(assignment.due_date) &&
+                        !assignment.my_submission,
                 }"
             >
-                <!-- ===================================================== -->
-                <!-- ASSIGNMENT INFORMATION + STATUS -->
-                <!-- ===================================================== -->
-
+                <!-- Assignment Information + Status -->
                 <div
                     class="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
                 >
@@ -160,7 +153,7 @@ function isPastDue(dueDate: string | null): boolean {
                         <h3
                             class="break-words font-semibold sm:text-base"
                         >
-                            {{ a.title }}
+                            {{ assignment.title }}
                         </h3>
 
                         <div
@@ -170,18 +163,21 @@ function isPastDue(dueDate: string | null): boolean {
                                 variant="outline"
                                 class="text-xs"
                             >
-                                {{ typeLabel[a.type] }}
+                                {{
+                                    typeLabel[assignment.type] ??
+                                    assignment.type
+                                }}
                             </Badge>
 
                             <span class="whitespace-nowrap">
-                                Max: {{ a.max_score }} pts
+                                Max: {{ assignment.max_score }} pts
                             </span>
 
                             <span
-                                v-if="a.due_date"
+                                v-if="assignment.due_date"
                                 class="flex flex-wrap items-center gap-1"
                                 :class="
-                                    isPastDue(a.due_date)
+                                    isPastDue(assignment.due_date)
                                         ? 'text-red-600'
                                         : ''
                                 "
@@ -190,7 +186,7 @@ function isPastDue(dueDate: string | null): boolean {
 
                                 <span>
                                     {{
-                                        isPastDue(a.due_date)
+                                        isPastDue(assignment.due_date)
                                             ? 'Due was'
                                             : 'Due'
                                     }}
@@ -199,7 +195,7 @@ function isPastDue(dueDate: string | null): boolean {
                                 <span>
                                     {{
                                         new Date(
-                                            a.due_date,
+                                            assignment.due_date,
                                         ).toLocaleString()
                                     }}
                                 </span>
@@ -207,21 +203,19 @@ function isPastDue(dueDate: string | null): boolean {
                         </div>
                     </div>
 
-                    <!-- ================================================= -->
-                    <!-- STATUS -->
-                    <!-- ================================================= -->
-
+                    <!-- Status -->
                     <div
                         class="flex shrink-0 flex-row items-center justify-between gap-3 border-t pt-3 sm:min-w-[150px] sm:flex-col sm:items-end sm:border-0 sm:pt-0"
                     >
                         <!-- Submitted -->
                         <div
-                            v-if="a.my_submission"
+                            v-if="assignment.my_submission"
                             class="flex flex-col items-start gap-1 sm:items-end"
                         >
                             <Badge
                                 :variant="
-                                    a.my_submission.status === 'approved'
+                                    assignment.my_submission.status ===
+                                    'approved'
                                         ? 'default'
                                         : 'secondary'
                                 "
@@ -229,32 +223,33 @@ function isPastDue(dueDate: string | null): boolean {
                             >
                                 <CheckCircle2
                                     v-if="
-                                        a.my_submission.status ===
+                                        assignment.my_submission.status ===
                                         'approved'
                                     "
                                     class="mr-1 h-3 w-3"
                                 />
 
                                 {{
-                                    a.my_submission.status === 'grading'
+                                    assignment.my_submission.status ===
+                                    'grading'
                                         ? 'Being graded…'
-                                        : a.my_submission.status
+                                        : assignment.my_submission.status
                                 }}
                             </Badge>
 
                             <div
-                                v-if="a.my_grade?.is_released"
+                                v-if="assignment.my_grade?.is_released"
                                 class="text-sm font-bold"
                             >
-                                {{ a.my_grade.raw_score }}
+                                {{ assignment.my_grade.raw_score }}
                                 /
-                                {{ a.my_grade.max_score }}
+                                {{ assignment.my_grade.max_score }}
                             </div>
                         </div>
 
                         <!-- Past Due -->
                         <Badge
-                            v-else-if="isPastDue(a.due_date)"
+                            v-else-if="isPastDue(assignment.due_date)"
                             variant="destructive"
                         >
                             Past Due
@@ -270,33 +265,32 @@ function isPastDue(dueDate: string | null): boolean {
                     </div>
                 </div>
 
-                <!-- ===================================================== -->
-                <!-- ACTIONS -->
-                <!-- ===================================================== -->
-
+                <!-- Actions -->
                 <div
                     class="flex flex-col gap-2 border-t pt-4 sm:flex-row"
                 >
+                    <!-- Submit -->
                     <Button
                         v-if="
-                            !a.my_submission &&
-                            !isPastDue(a.due_date)
+                            !assignment.my_submission &&
+                            !isPastDue(assignment.due_date)
                         "
                         size="sm"
                         class="w-full sm:w-auto"
                         as-child
                     >
                         <Link
-                            :href="`/assignments/${a.id}/submit`"
+                            :href="`/assignments/${assignment.id}/submit`"
                         >
                             Submit Assignment
                         </Link>
                     </Button>
 
+                    <!-- Edit Submission -->
                     <Button
                         v-else-if="
-                            a.my_submission &&
-                            a.my_submission.status !== 'approved'
+                            assignment.my_submission &&
+                            assignment.my_submission.status !== 'approved'
                         "
                         size="sm"
                         variant="outline"
@@ -304,21 +298,22 @@ function isPastDue(dueDate: string | null): boolean {
                         as-child
                     >
                         <Link
-                            :href="`/assignments/${a.id}/submit`"
+                            :href="`/assignments/${assignment.id}/submit`"
                         >
                             Edit Submission
                         </Link>
                     </Button>
 
+                    <!-- View Result -->
                     <Button
-                        v-if="a.my_submission"
+                        v-if="assignment.my_submission"
                         size="sm"
                         variant="ghost"
                         class="w-full sm:w-auto"
                         as-child
                     >
                         <Link
-                            :href="`/submissions/${a.my_submission.id}`"
+                            :href="`/submissions/${assignment.my_submission.id}`"
                         >
                             View Result
                         </Link>
@@ -328,3 +323,4 @@ function isPastDue(dueDate: string | null): boolean {
         </div>
     </div>
 </template>
+

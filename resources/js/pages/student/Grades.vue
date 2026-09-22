@@ -5,12 +5,11 @@ import {
     BarChart3,
     TrendingUp,
 } from 'lucide-vue-next';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 type GradingItem = {
-    id: number;
+    id: string;
     name: string;
     max_score: number;
     score: number | null;
@@ -18,7 +17,7 @@ type GradingItem = {
 };
 
 type Component = {
-    id: number;
+    id: string;
     name: string;
     weight: number;
     items: GradingItem[];
@@ -29,7 +28,7 @@ type Component = {
 };
 
 type Section = {
-    id: number;
+    id: string;
     name: string;
     subject: {
         code: string;
@@ -66,9 +65,13 @@ defineOptions({
 function gradeColor(pct: number | null): string {
     if (pct === null) return '';
 
-    if (pct >= 90) return 'text-green-600';
+    if (pct >= 90) {
+        return 'text-green-600';
+    }
 
-    if (pct >= 75) return 'text-yellow-600';
+    if (pct >= 75) {
+        return 'text-yellow-600';
+    }
 
     return 'text-red-600';
 }
@@ -137,6 +140,7 @@ function gradeColor(pct: number | null): string {
                 class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"
             >
                 <!-- Overall Score -->
+
                 <div class="min-w-0">
                     <p
                         class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -155,6 +159,7 @@ function gradeColor(pct: number | null): string {
                 </div>
 
                 <!-- Final Grade -->
+
                 <div
                     v-if="transmutedGrade"
                     class="border-t pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right"
@@ -182,6 +187,7 @@ function gradeColor(pct: number | null): string {
             </div>
 
             <!-- Progress -->
+
             <div
                 class="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted"
             >
@@ -200,6 +206,7 @@ function gradeColor(pct: number | null): string {
         </div>
 
         <!-- No final grade -->
+
         <div
             v-else
             class="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground"
@@ -237,6 +244,7 @@ function gradeColor(pct: number | null): string {
                     class="flex flex-col gap-2 border-b bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                     <!-- Component name -->
+
                     <div
                         class="flex min-w-0 items-center gap-2 sm:gap-3"
                     >
@@ -255,6 +263,7 @@ function gradeColor(pct: number | null): string {
                     </div>
 
                     <!-- Component percentage -->
+
                     <div
                         class="text-left text-sm sm:shrink-0 sm:text-right"
                     >
@@ -299,6 +308,7 @@ function gradeColor(pct: number | null): string {
                         class="flex min-w-0 flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                     >
                         <!-- Item name -->
+
                         <span
                             class="min-w-0 break-words text-muted-foreground"
                         >
@@ -306,6 +316,7 @@ function gradeColor(pct: number | null): string {
                         </span>
 
                         <!-- Score -->
+
                         <div
                             class="flex shrink-0 items-center justify-between gap-3 sm:justify-end"
                         >
@@ -325,6 +336,7 @@ function gradeColor(pct: number | null): string {
                             </span>
 
                             <!-- Progress -->
+
                             <div
                                 v-if="
                                     item.is_released &&
@@ -348,6 +360,7 @@ function gradeColor(pct: number | null): string {
                     </div>
 
                     <!-- No items -->
+
                     <div
                         v-if="comp.items.length === 0"
                         class="px-4 py-3 text-xs text-muted-foreground"
