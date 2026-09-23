@@ -479,6 +479,12 @@ class SectionController extends Controller
         string $id
     ): JsonResponse {
         try {
+            /*
+            |--------------------------------------------------------------------------
+            | Resolve Section
+            |--------------------------------------------------------------------------
+            */
+
             $sectionId = Crypt::decryptString($id);
 
             $section = Section::with([
@@ -489,51 +495,173 @@ class SectionController extends Controller
                 ->withCount('enrollments')
                 ->findOrFail($sectionId);
 
+            /*
+            |--------------------------------------------------------------------------
+            | Authorization
+            |--------------------------------------------------------------------------
+            |
+            | Admin:
+            |   Can access any section.
+            |
+            | Faculty:
+            |   Can only access their own sections.
+            |
+            */
+
             $this->authorizeSection(
                 $section,
                 $request
             );
 
-            $enrollments = $section
+            /*
+            |--------------------------------------------------------------------------
+            | Enrollment Query
+            |--------------------------------------------------------------------------
+            */
+
+            $query = $section
                 ->enrollments()
-                ->with('student')
-                ->get()
-                ->map(
-                    fn ($enrollment) => [
-                        'id' => Crypt::encryptString(
-                            (string) $enrollment->id
-                        ),
+                ->with('student');
 
-                        'student' => $enrollment->student
-                            ? [
-                                'id' => Crypt::encryptString(
-                                    (string) $enrollment->student->id
-                                ),
-                                'student_no' => $enrollment->student->student_no,
+            /*
+            |--------------------------------------------------------------------------
+            | Search
+            |--------------------------------------------------------------------------
+            */
 
-                                'name' => trim(
-                                    $enrollment->student->first_name . ' ' .
-                                    $enrollment->student->last_name
-                                ),
-
-                                'email' => $enrollment->student->email,
-                                'course' => $enrollment->student->course,
-                                'year_level' => $enrollment->student->year_level
-                            ]
-                            : null,
-                    ]
+            if ($search = $request->get('search')) {
+                $query->whereHas(
+                    'student',
+                    function ($student) use ($search) {
+                        $student->where(
+                            function ($q) use ($search) {
+                                $q->where(
+                                    'student_no',
+                                    'like',
+                                    "%{$search}%"
+                                )
+                                    ->orWhere(
+                                        'first_name',
+                                        'like',
+                                        "%{$search}%"
+                                    )
+                                    ->orWhere(
+                                        'last_name',
+                                        'like',
+                                        "%{$search}%"
+                                    )
+                                    ->orWhere(
+                                        'email',
+                                        'like',
+                                        "%{$search}%"
+                                    )
+                                    ->orWhere(
+                                        'course',
+                                        'like',
+                                        "%{$search}%"
+                                    );
+                            }
+                        );
+                    }
                 );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Pagination
+            |--------------------------------------------------------------------------
+            */
+
+            $perPage = min(
+                max(
+                    $request->integer(
+                        'per_page',
+                        20
+                    ),
+                    1
+                ),
+                100
+            );
+
+            $page = max(
+                $request->integer(
+                    'page',
+                    1
+                ),
+                1
+            );
+
+            $enrollments = $query
+                ->latest()
+                ->paginate(
+                    perPage: $perPage,
+                    page: $page
+                )
+                ->withQueryString();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Transform Enrollments
+            |--------------------------------------------------------------------------
+            */
+
+            $enrollments->through(
+                fn ($enrollment) => [
+                    'id' => Crypt::encryptString(
+                        (string) $enrollment->id
+                    ),
+
+                    'student' => $enrollment->student
+                        ? [
+                            'id' => Crypt::encryptString(
+                                (string) $enrollment->student->id
+                            ),
+
+                            'student_no' =>
+                                $enrollment->student->student_no,
+
+                            'name' => trim(
+                                $enrollment->student->first_name .
+                                ' ' .
+                                $enrollment->student->last_name
+                            ),
+
+                            'email' =>
+                                $enrollment->student->email,
+
+                            'course' =>
+                                $enrollment->student->course,
+
+                            'year_level' =>
+                                $enrollment->student->year_level,
+                        ]
+                        : null,
+                ]
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Response
+            |--------------------------------------------------------------------------
+            */
 
             return response()->json([
                 'success' => true,
-                'message' => 'Section retrieved successfully.',
+
+                'message' =>
+                    'Section retrieved successfully.',
+
                 'data' => [
                     'id' => Crypt::encryptString(
                         (string) $section->id
                     ),
+
                     'name' => $section->name,
+
                     'schedule' => $section->schedule,
+
                     'room' => $section->room,
+
                     'enrollments_count' =>
                         $section->enrollments_count,
 
@@ -542,10 +670,13 @@ class SectionController extends Controller
                             'id' => Crypt::encryptString(
                                 (string) $section->semester->id
                             ),
+
                             'name' =>
                                 $section->semester->name,
+
                             'school_year' =>
                                 $section->semester->school_year,
+
                             'is_active' =>
                                 (bool) $section->semester->is_active,
                         ]
@@ -556,8 +687,10 @@ class SectionController extends Controller
                             'id' => Crypt::encryptString(
                                 (string) $section->subject->id
                             ),
+
                             'code' =>
                                 $section->subject->code,
+
                             'name' =>
                                 $section->subject->name,
                         ]
@@ -568,21 +701,86 @@ class SectionController extends Controller
                             'id' => Crypt::encryptString(
                                 (string) $section->faculty->id
                             ),
+
                             'name' =>
                                 $section->faculty->name,
+
                             'email' =>
                                 $section->faculty->email,
                         ]
                         : null,
 
-                    'enrollments' => $enrollments,
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Paginated Enrollments
+                    |--------------------------------------------------------------------------
+                    */
+
+                    'enrollments' =>
+                        $enrollments->items(),
+                ],
+
+                /*
+                |--------------------------------------------------------------------------
+                | Pagination
+                |--------------------------------------------------------------------------
+                */
+
+                'pagination' => [
+                    'current_page' =>
+                        $enrollments->currentPage(),
+
+                    'last_page' =>
+                        $enrollments->lastPage(),
+
+                    'per_page' =>
+                        $enrollments->perPage(),
+
+                    'total' =>
+                        $enrollments->total(),
+
+                    'from' =>
+                        $enrollments->firstItem(),
+
+                    'to' =>
+                        $enrollments->lastItem(),
+
+                    'has_more_pages' =>
+                        $enrollments->hasMorePages(),
+
+                    'next_page_url' =>
+                        $enrollments->nextPageUrl(),
+
+                    'previous_page_url' =>
+                        $enrollments->previousPageUrl(),
+
+                    'first_page_url' =>
+                        $enrollments->url(1),
+
+                    'last_page_url' =>
+                        $enrollments->url(
+                            $enrollments->lastPage()
+                        ),
+                ],
+
+                /*
+                |--------------------------------------------------------------------------
+                | Current Filters
+                |--------------------------------------------------------------------------
+                */
+
+                'filters' => [
+                    'search' =>
+                        $request->get('search'),
                 ],
             ], 200);
+
         } catch (DecryptException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid section ID.',
             ], 404);
+
         } catch (\Throwable $e) {
             report($e);
 
@@ -592,133 +790,6 @@ class SectionController extends Controller
             ], 500);
         }
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | API - Create
-    |--------------------------------------------------------------------------
-    */
-
-    public function store(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:100',
-            ],
-
-            'semester_id' => [
-                'required',
-            ],
-
-            'subject_id' => [
-                'required',
-            ],
-
-            'schedule' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
-
-            'room' => [
-                'nullable',
-                'string',
-                'max:100',
-            ],
-        ]);
-
-        try {
-            /*
-            |--------------------------------------------------------------------------
-            | Decrypt Foreign Keys
-            |--------------------------------------------------------------------------
-            */
-
-            try {
-                $semesterId = Crypt::decryptString(
-                    $validated['semester_id']
-                );
-
-                $subjectId = Crypt::decryptString(
-                    $validated['subject_id']
-                );
-            } catch (DecryptException $e) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid semester or subject ID.',
-                ], 422);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Validate Foreign Keys
-            |--------------------------------------------------------------------------
-            */
-
-            $semester = Semester::find($semesterId);
-            $subject = Subject::find($subjectId);
-
-            if (!$semester) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Selected semester does not exist.',
-                ], 422);
-            }
-
-            if (!$subject) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Selected subject does not exist.',
-                ], 422);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Create Section
-            |--------------------------------------------------------------------------
-            */
-
-            $section = Section::create([
-                'name' => $validated['name'],
-                'semester_id' => $semester->id,
-                'subject_id' => $subject->id,
-                'schedule' => $validated['schedule'] ?? null,
-                'room' => $validated['room'] ?? null,
-                'faculty_id' => $request->user()->id,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Section created successfully.',
-                'data' => [
-                    'id' => Crypt::encryptString(
-                        (string) $section->id
-                    ),
-                    'name' => $section->name,
-                    'schedule' => $section->schedule,
-                    'room' => $section->room,
-                    'semester_id' =>
-                        Crypt::encryptString(
-                            (string) $section->semester_id
-                        ),
-                    'subject_id' =>
-                        Crypt::encryptString(
-                            (string) $section->subject_id
-                        ),
-                ],
-            ], 201);
-        } catch (\Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create section.',
-            ], 500);
-        }
-    }
-
     /*
     |--------------------------------------------------------------------------
     | API - Update

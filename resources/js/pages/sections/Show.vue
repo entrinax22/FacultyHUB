@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, computed, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import axios from 'axios';
+
 import {
     Users,
     Plus,
@@ -14,9 +15,13 @@ import {
     X,
     Loader2,
 } from 'lucide-vue-next';
+
+import BaseTable from '@/components/BaseTable.vue';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+
 import {
     showApiToast,
     showApiError,
@@ -44,6 +49,20 @@ type Enrollment = {
     id: string;
     status?: string | null;
     student: Student;
+};
+
+type Pagination = {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+    has_more_pages: boolean;
+    next_page_url: string | null;
+    previous_page_url: string | null;
+    first_page_url: string;
+    last_page_url: string;
 };
 
 type Section = {
@@ -88,6 +107,10 @@ type SectionDataResponse = {
     success: boolean;
     message: string;
     data: Section;
+    pagination: Pagination | null;
+    filters: {
+        search: string | null;
+    };
 };
 
 type StudentSearchResponse = {
@@ -123,6 +146,48 @@ defineOptions({
 
 /*
 |--------------------------------------------------------------------------
+| BaseTable Columns
+|--------------------------------------------------------------------------
+*/
+
+const columns = [
+    {
+        key: 'student_no',
+        label: 'Student No.',
+    },
+    {
+        key: 'student',
+        label: 'Student',
+    },
+    {
+        key: 'email',
+        label: 'Email',
+        class: 'hidden lg:table-cell',
+    },
+    {
+        key: 'course',
+        label: 'Course',
+        class: 'hidden md:table-cell',
+    },
+    {
+        key: 'year_level',
+        label: 'Year',
+        class: 'hidden sm:table-cell',
+    },
+    {
+        key: 'status',
+        label: 'Status',
+    },
+    {
+        key: 'actions',
+        label: 'Actions',
+        class: 'text-right',
+        headerClass: 'text-right',
+    },
+];
+
+/*
+|--------------------------------------------------------------------------
 | State
 |--------------------------------------------------------------------------
 */
@@ -130,6 +195,40 @@ defineOptions({
 const section = ref<Section | null>(null);
 const enrollments = ref<Enrollment[]>([]);
 const loading = ref(true);
+
+/*
+|--------------------------------------------------------------------------
+| Pagination
+|--------------------------------------------------------------------------
+*/
+
+const pagination = ref<Pagination>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 20,
+    total: 0,
+    from: null,
+    to: null,
+    has_more_pages: false,
+    next_page_url: null,
+    previous_page_url: null,
+    first_page_url: '',
+    last_page_url: '',
+});
+
+/*
+|--------------------------------------------------------------------------
+| Roster Search
+|--------------------------------------------------------------------------
+*/
+
+const rosterSearch = ref('');
+
+/*
+|--------------------------------------------------------------------------
+| Enrollment Tabs
+|--------------------------------------------------------------------------
+*/
 
 const enrollTab = ref<'single' | 'bulk'>('single');
 
@@ -166,14 +265,6 @@ const showDropdown = ref(false);
 const searchingStudents = ref(false);
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-/*
-|--------------------------------------------------------------------------
-| Roster Search
-|--------------------------------------------------------------------------
-*/
-
-const rosterSearch = ref('');
 
 /*
 |--------------------------------------------------------------------------
@@ -218,19 +309,43 @@ function getStudentYear(student: Student): string {
 |--------------------------------------------------------------------------
 */
 
-async function loadSection() {
+async function loadSection(
+    page = 1,
+    perPage?: number,
+) {
     loading.value = true;
 
     try {
         const response =
             await axios.get<SectionDataResponse>(
                 `/sections/data/${props.sectionId}`,
+                {
+                    params: {
+                        page,
+                        per_page:
+                            perPage ??
+                            pagination.value.per_page,
+                        search:
+                            rosterSearch.value.trim() ||
+                            undefined,
+                    },
+                },
             );
 
-        const data = response.data.data;
+        if (response.data.success) {
+            section.value =
+                response.data.data;
 
-        section.value = data;
-        enrollments.value = data.enrollments ?? [];
+            enrollments.value =
+                response.data.data.enrollments ?? [];
+
+            if (response.data.pagination) {
+                pagination.value =
+                    response.data.pagination;
+            }
+        } else {
+            showApiError(response.data.message);
+        }
     } catch (error) {
         console.error(
             'Failed to load section:',
@@ -248,37 +363,46 @@ async function loadSection() {
 
 /*
 |--------------------------------------------------------------------------
-| Computed Roster
+| Roster Search
 |--------------------------------------------------------------------------
 */
 
-const filteredEnrollments = computed(() => {
-    const q = rosterSearch.value
-        .toLowerCase()
-        .trim();
+function applyRosterSearch() {
+    loadSection(
+        1,
+        pagination.value.per_page,
+    );
+}
 
-    if (!q) {
-        return enrollments.value;
+/*
+|--------------------------------------------------------------------------
+| Pagination
+|--------------------------------------------------------------------------
+*/
+
+function handlePageChange(page: number) {
+    if (
+        page < 1 ||
+        page > pagination.value.last_page ||
+        page === pagination.value.current_page
+    ) {
+        return;
     }
 
-    return enrollments.value.filter((enrollment) => {
-        const student = enrollment.student;
+    loadSection(
+        page,
+        pagination.value.per_page,
+    );
+}
 
-        const values = [
-            getStudentNumber(student),
-            getStudentName(student),
-            getStudentCourse(student),
-            getStudentYear(student),
-            student.email,
-        ];
-
-        return values.some((value) =>
-            value
-                .toLowerCase()
-                .includes(q),
-        );
-    });
-});
+function handlePerPageChange(
+    perPage: number,
+) {
+    loadSection(
+        1,
+        perPage,
+    );
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -301,39 +425,43 @@ function onSearchInput() {
         searchResults.value = [];
         showDropdown.value = false;
         searchingStudents.value = false;
+
         return;
     }
 
     searchingStudents.value = true;
 
-    searchTimer = setTimeout(async () => {
-        try {
-            const response =
-                await axios.get<StudentSearchResponse>(
-                    `/sections/${props.sectionId}/students/search`,
-                    {
-                        params: {
-                            q,
+    searchTimer = setTimeout(
+        async () => {
+            try {
+                const response =
+                    await axios.get<StudentSearchResponse>(
+                        `/sections/${props.sectionId}/students/search`,
+                        {
+                            params: {
+                                q,
+                            },
                         },
-                    },
+                    );
+
+                searchResults.value =
+                    response.data.data ?? [];
+
+                showDropdown.value = true;
+            } catch (error) {
+                console.error(
+                    'Failed to search students:',
+                    error,
                 );
 
-            searchResults.value =
-                response.data.data ?? [];
-
-            showDropdown.value = true;
-        } catch (error) {
-            console.error(
-                'Failed to search students:',
-                error,
-            );
-
-            searchResults.value = [];
-            showDropdown.value = true;
-        } finally {
-            searchingStudents.value = false;
-        }
-    }, 250);
+                searchResults.value = [];
+                showDropdown.value = true;
+            } finally {
+                searchingStudents.value = false;
+            }
+        },
+        250,
+    );
 }
 
 function selectStudent(
@@ -399,7 +527,10 @@ async function enrollStudent() {
 
         clearSelection();
 
-        await loadSection();
+        await loadSection(
+            1,
+            pagination.value.per_page,
+        );
     } catch (error: any) {
         console.error(
             'Failed to enroll student:',
@@ -453,7 +584,10 @@ async function submitBulk() {
 
         bulkStudentNos.value = '';
 
-        await loadSection();
+        await loadSection(
+            1,
+            pagination.value.per_page,
+        );
     } catch (error: any) {
         console.error(
             'Failed to bulk enroll students:',
@@ -516,7 +650,10 @@ async function unenroll(
 
         showApiToast(response);
 
-        await loadSection();
+        await loadSection(
+            pagination.value.current_page,
+            pagination.value.per_page,
+        );
     } catch (error) {
         console.error(
             'Failed to remove student:',
@@ -540,8 +677,6 @@ onMounted(() => {
 });
 </script>
 
-
-
 <template>
     <Head
         :title="section?.name ?? 'Section'"
@@ -552,7 +687,7 @@ onMounted(() => {
     <!-- ============================================================= -->
 
     <div
-        v-if="loading"
+        v-if="loading && !section"
         class="flex min-h-full flex-1 items-center justify-center p-6"
     >
         <div
@@ -561,6 +696,7 @@ onMounted(() => {
             <Loader2
                 class="h-4 w-4 animate-spin"
             />
+
             Loading section...
         </div>
     </div>
@@ -614,6 +750,7 @@ onMounted(() => {
                         <Layers
                             class="mr-1.5 h-3.5 w-3.5 shrink-0"
                         />
+
                         <span>Modules</span>
                     </Link>
                 </Button>
@@ -630,6 +767,7 @@ onMounted(() => {
                         <ClipboardList
                             class="mr-1.5 h-3.5 w-3.5 shrink-0"
                         />
+
                         <span>Assignments</span>
                     </Link>
                 </Button>
@@ -646,6 +784,7 @@ onMounted(() => {
                         <CalendarCheck
                             class="mr-1.5 h-3.5 w-3.5 shrink-0"
                         />
+
                         <span>Attendance</span>
                     </Link>
                 </Button>
@@ -662,6 +801,7 @@ onMounted(() => {
                         <BarChart2
                             class="mr-1.5 h-3.5 w-3.5 shrink-0"
                         />
+
                         <span>Class Record</span>
                     </Link>
                 </Button>
@@ -1037,383 +1177,201 @@ onMounted(() => {
         <!-- STUDENT LIST -->
         <!-- ========================================================= -->
 
-        <div class="space-y-3">
-            <!-- Roster Header -->
+        <BaseTable
+            :columns="columns"
+            :data="enrollments"
+            :pagination="pagination ?? undefined"
+            empty-text="No students enrolled yet."
+            :per-page-options="[10, 20, 25, 50, 100]"
+            :loading="loading"
+            @update:page="handlePageChange"
+            @update:per-page="handlePerPageChange"
+        >
+            <!-- ===================================================== -->
+            <!-- TOOLBAR -->
+            <!-- ===================================================== -->
 
-            <div
-                class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-                <h2
-                    class="flex items-center gap-2 font-semibold"
-                >
-                    <Users class="h-4 w-4" />
-                    Enrolled Students
-                </h2>
-
+            <template #toolbar>
                 <div
-                    class="relative w-full sm:w-64"
+                    class="flex w-full flex-wrap gap-3"
                 >
-                    <Search
-                        class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                    />
+                    <!-- Search -->
 
-                    <Input
-                        v-model="rosterSearch"
-                        placeholder="Search student..."
-                        class="w-full pl-9"
-                    />
-                </div>
-            </div>
-
-            <!-- No Students -->
-
-            <div
-                v-if="enrollments.length === 0"
-                class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground"
-            >
-                No students enrolled yet.
-            </div>
-
-            <!-- No Search Results -->
-
-            <div
-                v-else-if="
-                    filteredEnrollments.length === 0
-                "
-                class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground"
-            >
-                No students match
-                "{{ rosterSearch }}".
-            </div>
-
-            <!-- ===================================================== -->
-            <!-- DESKTOP TABLE -->
-            <!-- ===================================================== -->
-
-            <div
-                v-else
-                class="hidden overflow-hidden rounded-xl border md:block"
-            >
-                <div
-                    class="overflow-x-auto"
-                >
-                    <table
-                        class="w-full min-w-[760px] text-sm"
-                    >
-                        <thead
-                            class="border-b bg-muted/50"
-                        >
-                            <tr>
-                                <th
-                                    class="w-12 px-4 py-3 text-left font-medium text-muted-foreground"
-                                >
-                                    #
-                                </th>
-
-                                <th
-                                    class="px-4 py-3 text-left font-medium text-muted-foreground"
-                                >
-                                    Student No.
-                                </th>
-
-                                <th
-                                    class="px-4 py-3 text-left font-medium text-muted-foreground"
-                                >
-                                    Name
-                                </th>
-
-                                <th
-                                    class="px-4 py-3 text-left font-medium text-muted-foreground"
-                                >
-                                    Email
-                                </th>
-
-                                <th
-                                    class="px-4 py-3 text-left font-medium text-muted-foreground"
-                                >
-                                    Status
-                                </th>
-
-                                <th
-                                    class="w-20 px-4 py-3 text-right font-medium text-muted-foreground"
-                                >
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-
-                        <tbody
-                            class="divide-y"
-                        >
-                            <tr
-                                v-for="(
-                                    enrollment, i
-                                ) in filteredEnrollments"
-                                :key="
-                                    enrollment.id
-                                "
-                                class="transition-colors hover:bg-muted/30"
-                            >
-                                <td
-                                    class="px-4 py-3 text-muted-foreground"
-                                >
-                                    {{ i + 1 }}
-                                </td>
-
-                                <td
-                                    class="px-4 py-3 font-mono text-xs"
-                                >
-                                    {{
-                                        getStudentNumber(
-                                            enrollment.student,
-                                        )
-                                    }}
-                                </td>
-
-                                <td
-                                    class="px-4 py-3"
-                                >
-                                    <Link
-                                        :href="`/students/${enrollment.student.id}`"
-                                        class="font-medium hover:underline"
-                                    >
-                                        {{
-                                            getStudentName(
-                                                enrollment.student,
-                                            )
-                                        }}
-                                    </Link>
-                                </td>
-
-                                <td
-                                    class="px-4 py-3 text-muted-foreground"
-                                >
-                                    {{
-                                        enrollment.student.email
-                                    }}
-                                </td>
-
-                                <td
-                                    class="px-4 py-3"
-                                >
-                                    <Badge
-                                        :variant="
-                                            enrollment.status ===
-                                            'active'
-                                                ? 'default'
-                                                : 'secondary'
-                                        "
-                                    >
-                                        {{
-                                            enrollment.status ??
-                                            'active'
-                                        }}
-                                    </Badge>
-                                </td>
-
-                                <td
-                                    class="px-4 py-3 text-right"
-                                >
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        class="text-destructive hover:text-destructive"
-                                        :disabled="
-                                            unenrollingId ===
-                                            enrollment.id
-                                        "
-                                        :aria-label="`Remove ${getStudentName(enrollment.student)}`"
-                                        @click="
-                                            unenroll(
-                                                enrollment,
-                                            )
-                                        "
-                                    >
-                                        <Loader2
-                                            v-if="
-                                                unenrollingId ===
-                                                enrollment.id
-                                            "
-                                            class="h-4 w-4 animate-spin"
-                                        />
-
-                                        <Trash2
-                                            v-else
-                                            class="h-4 w-4"
-                                        />
-                                    </Button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ===================================================== -->
-            <!-- MOBILE STUDENT CARDS -->
-            <!-- ===================================================== -->
-
-            <div
-                class="space-y-3 md:hidden"
-            >
-                <div
-                    v-for="(
-                        enrollment, i
-                    ) in filteredEnrollments"
-                    :key="enrollment.id"
-                    class="rounded-xl border bg-card p-4"
-                >
                     <div
-                        class="flex items-start justify-between gap-3"
+                        class="relative min-w-48 flex-1"
                     >
-                        <div
-                            class="flex min-w-0 items-start gap-3"
-                        >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
-                            >
-                                {{ i + 1 }}
-                            </div>
+                        <Search
+                            class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                        />
 
-                            <div
-                                class="min-w-0"
-                            >
-                                <Link
-                                    :href="`/students/${enrollment.student.id}`"
-                                    class="block truncate font-semibold hover:underline"
-                                >
-                                    {{
-                                        getStudentName(
-                                            enrollment.student,
-                                        )
-                                    }}
-                                </Link>
-
-                                <p
-                                    class="mt-1 font-mono text-xs text-muted-foreground"
-                                >
-                                    {{
-                                        enrollment.student.email
-                                    }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <Badge
-                            class="shrink-0"
-                            :variant="
-                                enrollment.status ===
-                                'active'
-                                    ? 'default'
-                                    : 'secondary'
+                        <Input
+                            v-model="rosterSearch"
+                            placeholder="Search student..."
+                            class="pl-9"
+                            @keydown.enter="
+                                applyRosterSearch
                             "
-                        >
-                            {{
-                                enrollment.status ??
-                                'active'
-                            }}
-                        </Badge>
+                        />
                     </div>
 
-                    <div
-                        class="mt-4 flex flex-col gap-2 border-t pt-3 text-xs text-muted-foreground"
+                    <!-- Search Button -->
+
+                    <Button
+                        variant="outline"
+                        :disabled="loading"
+                        @click="
+                            applyRosterSearch
+                        "
                     >
-                        <div
-                            class="flex items-center justify-between gap-3"
-                        >
-                            <span>
-                                Student No.
-                            </span>
+                        Search
+                    </Button>
+                </div>
+            </template>
 
-                            <span
-                                class="font-medium text-foreground"
-                            >
-                                {{
-                                    getStudentNumber(
-                                        enrollment.student,
-                                    )
-                                }}
-                            </span>
-                        </div>
+            <!-- ===================================================== -->
+            <!-- STUDENT NUMBER -->
+            <!-- ===================================================== -->
 
-                        <div
-                            class="flex items-center justify-between gap-3"
-                        >
-                            <span>
-                                Course
-                            </span>
+            <template
+                #cell-student_no="{ row }"
+            >
+                <span
+                    class="font-mono text-xs"
+                >
+                    {{
+                        getStudentNumber(
+                            row.student,
+                        )
+                    }}
+                </span>
+            </template>
 
-                            <span
-                                class="text-right font-medium text-foreground"
-                            >
-                                {{
-                                    getStudentCourse(
-                                        enrollment.student,
-                                    )
-                                }}
-                            </span>
-                        </div>
+            <!-- ===================================================== -->
+            <!-- STUDENT -->
+            <!-- ===================================================== -->
 
-                        <div
-                            class="flex items-center justify-between gap-3"
-                        >
-                            <span>
-                                Year Level
-                            </span>
+            <template
+                #cell-student="{ row }"
+            >
+                <Link
+                    :href="`/students/${row.student.id}`"
+                    class="font-medium hover:underline"
+                >
+                    {{
+                        getStudentName(
+                            row.student,
+                        )
+                    }}
+                </Link>
+            </template>
 
-                            <span
-                                class="font-medium text-foreground"
-                            >
-                                {{
-                                    getStudentYear(
-                                        enrollment.student,
-                                    )
-                                }}
-                            </span>
-                        </div>
-                    </div>
+            <!-- ===================================================== -->
+            <!-- EMAIL -->
+            <!-- ===================================================== -->
 
-                    <div
-                        class="mt-4 border-t pt-3"
+            <template
+                #cell-email="{ row }"
+            >
+                <span
+                    class="text-muted-foreground"
+                >
+                    {{ row.student.email }}
+                </span>
+            </template>
+
+            <!-- ===================================================== -->
+            <!-- COURSE -->
+            <!-- ===================================================== -->
+
+            <template
+                #cell-course="{ row }"
+            >
+                <span>
+                    {{
+                        getStudentCourse(
+                            row.student,
+                        )
+                    }}
+                </span>
+            </template>
+
+            <!-- ===================================================== -->
+            <!-- YEAR -->
+            <!-- ===================================================== -->
+
+            <template
+                #cell-year_level="{ row }"
+            >
+                <span>
+                    {{
+                        getStudentYear(
+                            row.student,
+                        )
+                    }}
+                </span>
+            </template>
+
+            <!-- ===================================================== -->
+            <!-- STATUS -->
+            <!-- ===================================================== -->
+
+            <template
+                #cell-status="{ row }"
+            >
+                <Badge
+                    :variant="
+                        row.status === 'active'
+                            ? 'default'
+                            : 'secondary'
+                    "
+                    class="text-xs capitalize"
+                >
+                    {{
+                        row.status ??
+                        'active'
+                    }}
+                </Badge>
+            </template>
+
+            <!-- ===================================================== -->
+            <!-- ACTIONS -->
+            <!-- ===================================================== -->
+
+            <template
+                #cell-actions="{ row }"
+            >
+                <div class="text-right">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="text-destructive hover:text-destructive"
+                        :disabled="
+                            unenrollingId ===
+                            row.id
+                        "
+                        :aria-label="
+                            `Remove ${getStudentName(row.student)}`
+                        "
+                        @click="
+                            unenroll(row)
+                        "
                     >
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            class="w-full text-destructive hover:text-destructive"
-                            :disabled="
+                        <Loader2
+                            v-if="
                                 unenrollingId ===
-                                enrollment.id
+                                row.id
                             "
-                            @click="
-                                unenroll(
-                                    enrollment,
-                                )
-                            "
-                        >
-                            <Loader2
-                                v-if="
-                                    unenrollingId ===
-                                    enrollment.id
-                                "
-                                class="mr-2 h-4 w-4 animate-spin"
-                            />
+                            class="h-4 w-4 animate-spin"
+                        />
 
-                            <Trash2
-                                v-else
-                                class="mr-2 h-4 w-4"
-                            />
-
-                            {{
-                                unenrollingId ===
-                                enrollment.id
-                                    ? 'Removing...'
-                                    : 'Remove from Section'
-                            }}
-                        </Button>
-                    </div>
+                        <Trash2
+                            v-else
+                            class="h-4 w-4"
+                        />
+                    </Button>
                 </div>
-            </div>
-        </div>
+            </template>
+        </BaseTable>
     </div>
 
     <!-- ============================================================= -->
@@ -1441,4 +1399,3 @@ onMounted(() => {
         </div>
     </div>
 </template>
-

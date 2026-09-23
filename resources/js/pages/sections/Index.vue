@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, watch } from 'vue';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, ref, onMounted, watch } from 'vue';
 import axios from 'axios';
 
 import {
@@ -26,10 +26,13 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
-import {
-    showApiToast,
-    showApiError,
-} from '@/lib/flashToast';
+import { showApiToast, showApiError } from '@/lib/flashToast';
+
+/*
+|--------------------------------------------------------------------------
+| Types
+|--------------------------------------------------------------------------
+*/
 
 type Section = {
     id: string;
@@ -84,9 +87,24 @@ type ApiResponse = {
     data: Section[];
     pagination: Pagination;
     filters?: {
+        scope?: 'all' | 'mine';
+        search?: string | null;
+        semester_id?: string | null;
         semesters: Semester[];
     };
 };
+
+type PageProps = {
+    auth: {
+        role: string;
+    };
+};
+
+/*
+|--------------------------------------------------------------------------
+| Page Options
+|--------------------------------------------------------------------------
+*/
 
 defineOptions({
     layout: {
@@ -96,6 +114,18 @@ defineOptions({
         ],
     },
 });
+
+/*
+|--------------------------------------------------------------------------
+| Page / Auth
+|--------------------------------------------------------------------------
+*/
+
+const page = usePage<PageProps>();
+
+const isAdmin = computed(() => page.props.auth.role === 'admin');
+
+const isFaculty = computed(() => page.props.auth.role === 'faculty');
 
 /*
 |--------------------------------------------------------------------------
@@ -109,10 +139,40 @@ const semesters = ref<Semester[]>([]);
 const selectedSemesterId = ref('');
 const search = ref('');
 
-const pagination = ref<Pagination | null>(null);
+/*
+|--------------------------------------------------------------------------
+| Section Scope
+|--------------------------------------------------------------------------
+|
+| Admin:
+|   all  = All Sections
+|   mine = My Sections
+|
+| Faculty:
+|   Always mine.
+|
+*/
+
+const sectionScope = ref<'all' | 'mine'>('all');
+
+const pagination = ref<Pagination>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 12,
+    total: 0,
+    from: null,
+    to: null,
+    has_more_pages: false,
+    next_page_url: null,
+    previous_page_url: null,
+    first_page_url: '',
+    last_page_url: '',
+});
 
 const loading = ref(false);
 const deletingId = ref<string | null>(null);
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /*
 |--------------------------------------------------------------------------
@@ -120,31 +180,65 @@ const deletingId = ref<string | null>(null);
 |--------------------------------------------------------------------------
 */
 
-async function loadSections(page = 1) {
+async function loadSections(
+    pageNumber = 1,
+    perPage = pagination.value.per_page,
+) {
     loading.value = true;
 
     try {
-        const response = await axios.get<ApiResponse>(
-            '/sections/data',
-            {
-                params: {
-                    page,
-                    per_page: pagination.value?.per_page ?? 12,
-                    search: search.value || undefined,
-                    semester_id:
-                        selectedSemesterId.value || undefined,
-                },
-            },
-        );
+        /*
+        |--------------------------------------------------------------------------
+        | Faculty can only request their own sections.
+        |
+        | Admin can use the selected scope.
+        |--------------------------------------------------------------------------
+        */
 
-        sections.value = response.data.data;
+        const scope = isFaculty.value ? 'mine' : sectionScope.value;
+
+        const response = await axios.get<ApiResponse>('/sections/data', {
+            params: {
+                page: pageNumber,
+
+                per_page: perPage,
+
+                search: search.value.trim() || undefined,
+
+                semester_id: selectedSemesterId.value || undefined,
+
+                scope,
+            },
+        });
+
+        if (!response.data.success) {
+            showApiError(response.data.message);
+            return;
+        }
+
+        sections.value = response.data.data ?? [];
+
         pagination.value = response.data.pagination;
 
         if (response.data.filters?.semesters) {
             semesters.value = response.data.filters.semesters;
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Keep frontend scope synchronized with
+        | the backend response.
+        |--------------------------------------------------------------------------
+        */
+
+        if (isAdmin.value && response.data.filters?.scope) {
+            sectionScope.value = response.data.filters.scope;
+        }
     } catch (error) {
         console.error('Failed to load sections:', error);
+
+        sections.value = [];
+
         showApiError(error);
     } finally {
         loading.value = false;
@@ -157,17 +251,31 @@ async function loadSections(page = 1) {
 |--------------------------------------------------------------------------
 */
 
-let searchTimeout: ReturnType<typeof setTimeout> | null = null;
-
 watch(search, () => {
     if (searchTimeout) {
         clearTimeout(searchTimeout);
     }
 
     searchTimeout = setTimeout(() => {
-        loadSections(1);
+        loadSections(1, pagination.value.per_page);
     }, 400);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Section Scope
+|--------------------------------------------------------------------------
+*/
+
+function changeSectionScope(value: unknown) {
+    if (!isAdmin.value || (value !== 'all' && value !== 'mine')) {
+        return;
+    }
+
+    sectionScope.value = value;
+
+    loadSections(1, pagination.value.per_page);
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -182,7 +290,7 @@ function changeSemester(value: unknown) {
 
     selectedSemesterId.value = value;
 
-    loadSections(1);
+    loadSections(1, pagination.value.per_page);
 }
 
 /*
@@ -191,39 +299,39 @@ function changeSemester(value: unknown) {
 |--------------------------------------------------------------------------
 */
 
-function changePage(page: number) {
+function changePage(pageNumber: number) {
     if (
         loading.value ||
-        !pagination.value ||
-        page < 1 ||
-        page > pagination.value.last_page
+        pageNumber < 1 ||
+        pageNumber > pagination.value.last_page ||
+        pageNumber === pagination.value.current_page
     ) {
         return;
     }
 
-    loadSections(page);
+    loadSections(pageNumber, pagination.value.per_page);
 }
 
 function previousPage() {
-    if (
-        pagination.value &&
-        pagination.value.current_page > 1
-    ) {
-        changePage(
-            pagination.value.current_page - 1,
-        );
+    if (pagination.value.current_page > 1) {
+        changePage(pagination.value.current_page - 1);
     }
 }
 
 function nextPage() {
-    if (
-        pagination.value &&
-        pagination.value.has_more_pages
-    ) {
-        changePage(
-            pagination.value.current_page + 1,
-        );
+    if (pagination.value.has_more_pages) {
+        changePage(pagination.value.current_page + 1);
     }
+}
+
+function changePerPage(value: unknown) {
+    const perPage = Number(value);
+
+    if (!Number.isFinite(perPage) || perPage <= 0) {
+        return;
+    }
+
+    loadSections(1, perPage);
 }
 
 /*
@@ -248,20 +356,27 @@ async function deleteSection(section: Section) {
     deletingId.value = section.id;
 
     try {
-        const response = await axios.delete(
-            `/sections/delete/${section.id}`,
-        );
+        const response = await axios.delete(`/sections/delete/${section.id}`);
 
         showApiToast(response);
 
-        await loadSections(
-            pagination.value?.current_page ?? 1,
-        );
+        /*
+        |--------------------------------------------------------------------------
+        | If deleting the last item on the current
+        | page, move back one page when necessary.
+        |--------------------------------------------------------------------------
+        */
+
+        const currentPage = pagination.value.current_page;
+
+        const targetPage =
+            currentPage > 1 && sections.value.length === 1
+                ? currentPage - 1
+                : currentPage;
+
+        await loadSections(targetPage, pagination.value.per_page);
     } catch (error) {
-        console.error(
-            'Failed to delete section:',
-            error,
-        );
+        console.error('Failed to delete section:', error);
 
         showApiError(error);
     } finally {
@@ -286,6 +401,16 @@ function formatSemester(semester: Semester) {
 */
 
 onMounted(() => {
+    /*
+    |--------------------------------------------------------------------------
+    | Faculty must always start with "mine".
+    |--------------------------------------------------------------------------
+    */
+
+    if (isFaculty.value) {
+        sectionScope.value = 'mine';
+    }
+
     loadSections();
 });
 </script>
@@ -303,34 +428,23 @@ onMounted(() => {
         <div
             class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
         >
-            <!-- Title -->
             <div class="min-w-0">
-                <h1 class="text-xl font-semibold sm:text-2xl">
-                    Sections
-                </h1>
+                <h1 class="text-xl font-semibold sm:text-2xl">Sections</h1>
 
-                <p
-                    class="mt-1 text-xs text-muted-foreground sm:text-sm"
-                >
+                <p class="mt-1 text-xs text-muted-foreground sm:text-sm">
                     Manage class sections per semester
                 </p>
             </div>
 
-            <!-- Actions -->
-            <div
-                class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"
-            >
-                <!-- Semester -->
+            <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                <!-- Semester Filter -->
+
                 <Select
                     :model-value="selectedSemesterId"
                     @update:model-value="changeSemester"
                 >
-                    <SelectTrigger
-                        class="h-9 w-full sm:w-64"
-                    >
-                        <SelectValue
-                            placeholder="Select semester"
-                        />
+                    <SelectTrigger class="h-9 w-full sm:w-64">
+                        <SelectValue placeholder="Select semester" />
                     </SelectTrigger>
 
                     <SelectContent>
@@ -352,14 +466,11 @@ onMounted(() => {
                 </Select>
 
                 <!-- New Section -->
-                <Button
-                    as-child
-                    class="w-full sm:w-auto"
-                >
+
+                <Button as-child class="w-full sm:w-auto">
                     <Link href="/sections/create">
-                        <Plus
-                            class="mr-2 h-4 w-4 shrink-0"
-                        />
+                        <Plus class="mr-2 h-4 w-4 shrink-0" />
+
                         New Section
                     </Link>
                 </Button>
@@ -367,36 +478,81 @@ onMounted(() => {
         </div>
 
         <!-- ========================================================= -->
-        <!-- SEARCH -->
+        <!-- TOOLBAR -->
         <!-- ========================================================= -->
 
-        <div class="relative w-full sm:max-w-md">
-            <Search
-                class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            />
+        <!-- ========================================================= -->
+        <!-- TOOLBAR -->
+        <!-- ========================================================= -->
 
-            <input
-                v-model="search"
-                type="text"
-                placeholder="Search sections, subjects, or faculty..."
-                class="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:ring-1 focus:ring-ring"
-            />
+        <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+            <!-- Search -->
+
+            <div class="relative w-full min-w-0 sm:max-w-md">
+                <Search
+                    class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                />
+
+                <input
+                    v-model="search"
+                    type="text"
+                    placeholder="Search sections, subjects, or faculty..."
+                    class="h-10 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm transition outline-none focus:ring-1 focus:ring-ring"
+                />
+            </div>
+
+            <!-- Admin Controls -->
+
+            <div v-if="isAdmin" class="flex min-w-0 items-center gap-2">
+                <!-- Section Scope -->
+
+                <Select
+                    :model-value="sectionScope"
+                    @update:model-value="changeSectionScope"
+                >
+                    <SelectTrigger class="h-10 w-full shrink-0 sm:w-40">
+                        <SelectValue />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                        <SelectItem value="all"> All Sections </SelectItem>
+
+                        <SelectItem value="mine"> My Sections </SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <!-- Result Count -->
+
+                <div
+                    v-if="pagination.total > 0"
+                    class="shrink-0 text-xs whitespace-nowrap text-muted-foreground"
+                >
+                    {{ pagination.total }}
+                    section{{ pagination.total !== 1 ? 's' : '' }}
+                </div>
+            </div>
+
+            <!-- Faculty Result Count -->
+
+            <div
+                v-else-if="pagination.total > 0"
+                class="shrink-0 text-xs whitespace-nowrap text-muted-foreground"
+            >
+                {{ pagination.total }}
+                section{{ pagination.total !== 1 ? 's' : '' }}
+            </div>
         </div>
 
         <!-- ========================================================= -->
-        <!-- LOADING -->
+        <!-- INITIAL LOADING -->
         <!-- ========================================================= -->
 
         <div
             v-if="loading && sections.length === 0"
             class="flex min-h-48 items-center justify-center rounded-xl border border-dashed p-6"
         >
-            <div
-                class="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-                <Loader2
-                    class="h-4 w-4 animate-spin"
-                />
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 class="h-4 w-4 animate-spin" />
 
                 Loading sections...
             </div>
@@ -413,14 +569,23 @@ onMounted(() => {
             <div>
                 <p>
                     {{
-                        search
+                        search || selectedSemesterId
                             ? 'No sections found.'
-                            : 'No sections yet.'
+                            : isFaculty
+                              ? 'You do not have any sections yet.'
+                              : sectionScope === 'mine'
+                                ? 'You do not have any sections yet.'
+                                : 'No sections yet.'
                     }}
                 </p>
 
                 <p
-                    v-if="!search"
+                    v-if="
+                        !search &&
+                        !selectedSemesterId &&
+                        !isFaculty &&
+                        sectionScope === 'all'
+                    "
                     class="mt-1"
                 >
                     Create your first section to get started.
@@ -429,7 +594,7 @@ onMounted(() => {
         </div>
 
         <!-- ========================================================= -->
-        <!-- SECTION GRID -->
+        <!-- SECTION CARDS -->
         <!-- ========================================================= -->
 
         <div
@@ -441,10 +606,9 @@ onMounted(() => {
                 :key="section.id"
                 class="flex min-w-0 flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/20"
             >
-                <!-- Section Header -->
-                <div
-                    class="flex min-w-0 items-start justify-between gap-3"
-                >
+                <!-- Card Header -->
+
+                <div class="flex min-w-0 items-start justify-between gap-3">
                     <div class="min-w-0 flex-1">
                         <h3
                             class="truncate font-semibold"
@@ -465,9 +629,7 @@ onMounted(() => {
 
                     <Badge
                         :variant="
-                            section.semester.is_active
-                                ? 'default'
-                                : 'secondary'
+                            section.semester.is_active ? 'default' : 'secondary'
                         "
                         class="shrink-0 text-xs"
                     >
@@ -475,21 +637,16 @@ onMounted(() => {
                     </Badge>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- SECTION INFORMATION -->
-                <!-- ================================================= -->
+                <!-- Card Information -->
 
-                <div
-                    class="mt-4 space-y-2 text-xs text-muted-foreground"
-                >
+                <div class="mt-4 space-y-2 text-xs text-muted-foreground">
                     <!-- Schedule -->
+
                     <div
                         v-if="section.schedule"
                         class="flex min-w-0 items-start gap-2"
                     >
-                        <BookOpen
-                            class="mt-0.5 h-3.5 w-3.5 shrink-0"
-                        />
+                        <BookOpen class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 
                         <span class="break-words">
                             {{ section.schedule }}
@@ -497,67 +654,53 @@ onMounted(() => {
                     </div>
 
                     <!-- Room -->
+
                     <div
                         v-if="section.room"
                         class="flex min-w-0 items-start gap-2"
                     >
-                        <span
-                            class="w-3.5 shrink-0 text-center"
-                        >
-                            •
-                        </span>
+                        <span class="w-3.5 shrink-0 text-center"> • </span>
 
                         <span class="break-words">
-                            Room {{ section.room }}
+                            Room
+                            {{ section.room }}
                         </span>
                     </div>
 
                     <!-- Students -->
-                    <div
-                        class="flex items-center gap-2"
-                    >
-                        <Users
-                            class="h-3.5 w-3.5 shrink-0"
-                        />
+
+                    <div class="flex items-center gap-2">
+                        <Users class="h-3.5 w-3.5 shrink-0" />
 
                         <span>
                             {{ section.enrollments_count }}
                             student{{
-                                section.enrollments_count !== 1
-                                    ? 's'
-                                    : ''
+                                section.enrollments_count !== 1 ? 's' : ''
                             }}
                         </span>
                     </div>
 
                     <!-- Faculty -->
+
                     <div
                         v-if="section.faculty"
                         class="flex min-w-0 items-start gap-2"
                     >
-                        <span
-                            class="w-3.5 shrink-0 text-center"
-                        >
-                            •
-                        </span>
+                        <span class="w-3.5 shrink-0 text-center"> • </span>
 
-                        <span
-                            class="truncate"
-                            :title="section.faculty.name"
-                        >
+                        <span class="truncate" :title="section.faculty.name">
                             {{ section.faculty.name }}
                         </span>
                     </div>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- ACTIONS -->
-                <!-- ================================================= -->
+                <!-- Card Actions -->
 
                 <div
                     class="mt-5 grid grid-cols-[1fr_auto_auto] gap-2 border-t pt-4"
                 >
                     <!-- View -->
+
                     <Button
                         variant="outline"
                         size="sm"
@@ -573,6 +716,7 @@ onMounted(() => {
                     </Button>
 
                     <!-- Edit -->
+
                     <Button
                         variant="outline"
                         size="sm"
@@ -583,34 +727,26 @@ onMounted(() => {
                             :href="`/sections/edit/${section.id}`"
                             :aria-label="`Edit ${section.name}`"
                         >
-                            <Pencil
-                                class="h-3.5 w-3.5"
-                            />
+                            <Pencil class="h-3.5 w-3.5" />
                         </Link>
                     </Button>
 
                     <!-- Delete -->
+
                     <Button
                         variant="outline"
                         size="sm"
                         class="h-9 w-9 p-0 text-destructive hover:text-destructive"
-                        :disabled="
-                            deletingId === section.id
-                        "
+                        :disabled="deletingId === section.id"
                         :aria-label="`Delete ${section.name}`"
                         @click="deleteSection(section)"
                     >
                         <Loader2
-                            v-if="
-                                deletingId === section.id
-                            "
+                            v-if="deletingId === section.id"
                             class="h-3.5 w-3.5 animate-spin"
                         />
 
-                        <Trash2
-                            v-else
-                            class="h-3.5 w-3.5"
-                        />
+                        <Trash2 v-else class="h-3.5 w-3.5" />
                     </Button>
                 </div>
             </div>
@@ -621,94 +757,125 @@ onMounted(() => {
         <!-- ========================================================= -->
 
         <div
-            v-if="
-                pagination &&
-                pagination.total > 0
-            "
-            class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
+            v-if="pagination.total > 0"
+            class="flex flex-col gap-4 border-t pt-4"
         >
-            <!-- Result Count -->
-            <p
-                class="text-center text-xs text-muted-foreground sm:text-left"
-            >
-                Showing
-                <span class="font-medium text-foreground">
-                    {{ pagination.from ?? 0 }}
-                </span>
-                to
-                <span class="font-medium text-foreground">
-                    {{ pagination.to ?? 0 }}
-                </span>
-                of
-                <span class="font-medium text-foreground">
-                    {{ pagination.total }}
-                </span>
-                sections
-            </p>
+            <!-- Pagination Controls -->
 
-            <!-- Pagination Buttons -->
             <div
-                class="flex items-center justify-center gap-2 sm:justify-end"
+                class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
             >
-                <Button
-                    variant="outline"
-                    size="sm"
-                    :disabled="
-                        loading ||
-                        pagination.current_page <= 1
-                    "
-                    @click="previousPage"
-                >
-                    <ChevronLeft
-                        class="mr-1 h-4 w-4"
-                    />
+                <!-- Result Count -->
 
-                    Previous
-                </Button>
+                <p
+                    class="text-center text-xs text-muted-foreground sm:text-left"
+                >
+                    Showing
+
+                    <span class="font-medium text-foreground">
+                        {{ pagination.from ?? 0 }}
+                    </span>
+
+                    to
+
+                    <span class="font-medium text-foreground">
+                        {{ pagination.to ?? 0 }}
+                    </span>
+
+                    of
+
+                    <span class="font-medium text-foreground">
+                        {{ pagination.total }}
+                    </span>
+
+                    sections
+                </p>
+
+                <!-- Per Page -->
 
                 <div
-                    class="min-w-20 text-center text-xs text-muted-foreground"
+                    class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
                 >
-                    Page
-                    <span
-                        class="font-medium text-foreground"
+                    <span> Rows per page </span>
+
+                    <Select
+                        :model-value="String(pagination.per_page)"
+                        @update:model-value="changePerPage"
                     >
-                        {{ pagination.current_page }}
-                    </span>
-                    of
-                    <span
-                        class="font-medium text-foreground"
-                    >
-                        {{ pagination.last_page }}
-                    </span>
+                        <SelectTrigger class="h-8 w-20">
+                            <SelectValue />
+                        </SelectTrigger>
+
+                        <SelectContent>
+                            <SelectItem value="6"> 6 </SelectItem>
+
+                            <SelectItem value="12"> 12 </SelectItem>
+
+                            <SelectItem value="24"> 24 </SelectItem>
+
+                            <SelectItem value="48"> 48 </SelectItem>
+
+                            <SelectItem value="96"> 96 </SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
 
-                <Button
-                    variant="outline"
-                    size="sm"
-                    :disabled="
-                        loading ||
-                        !pagination.has_more_pages
-                    "
-                    @click="nextPage"
-                >
-                    Next
+                <!-- Page Navigation -->
 
-                    <ChevronRight
-                        class="ml-1 h-4 w-4"
-                    />
-                </Button>
+                <div
+                    class="flex items-center justify-center gap-2 sm:justify-end"
+                >
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        :disabled="loading || pagination.current_page <= 1"
+                        @click="previousPage"
+                    >
+                        <ChevronLeft class="mr-1 h-4 w-4" />
+
+                        Previous
+                    </Button>
+
+                    <div
+                        class="min-w-20 text-center text-xs text-muted-foreground"
+                    >
+                        Page
+
+                        <span class="font-medium text-foreground">
+                            {{ pagination.current_page }}
+                        </span>
+
+                        of
+
+                        <span class="font-medium text-foreground">
+                            {{ pagination.last_page }}
+                        </span>
+                    </div>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        :disabled="loading || !pagination.has_more_pages"
+                        @click="nextPage"
+                    >
+                        Next
+
+                        <ChevronRight class="ml-1 h-4 w-4" />
+                    </Button>
+                </div>
             </div>
         </div>
 
-        <!-- Loading indicator while changing page -->
+        <!-- ========================================================= -->
+        <!-- PAGE LOADING -->
+        <!-- ========================================================= -->
+
         <div
             v-if="loading && sections.length > 0"
             class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
         >
-            <Loader2
-                class="h-3.5 w-3.5 animate-spin"
-            />
+            <Loader2 class="h-3.5 w-3.5 animate-spin" />
+
             Updating sections...
         </div>
     </div>

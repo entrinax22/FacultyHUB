@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
 import {
@@ -9,9 +9,16 @@ import {
     Users,
 } from 'lucide-vue-next';
 
+import axios from 'axios';
+import { showApiError, showApiToast } from '@/lib/flashToast';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+
+// =====================================================
+// Types
+// =====================================================
 
 type SectionItem = {
     id: string;
@@ -30,6 +37,22 @@ type ActiveSemester = {
     name: string;
     school_year: string;
 };
+
+type EnrollmentData = {
+    enrollment_id: string;
+    section_id: string;
+    status: string;
+};
+
+type EnrollmentResponse = {
+    success: boolean;
+    message: string;
+    data: EnrollmentData[];
+};
+
+// =====================================================
+// Props
+// =====================================================
 
 const props = defineProps<{
     sections: SectionItem[];
@@ -51,39 +74,75 @@ defineOptions({
     },
 });
 
+// =====================================================
+// State
+// =====================================================
+
+const sections = ref<SectionItem[]>(
+    props.sections.map((section) => ({
+        ...section,
+    })),
+);
+
 const search = ref('');
 const enrolling = ref<string | null>(null);
+
+// =====================================================
+// Computed
+// =====================================================
 
 const filtered = computed(() => {
     const q = search.value.toLowerCase().trim();
 
     if (!q) {
-        return props.sections;
+        return sections.value;
     }
 
-    return props.sections.filter(
+    return sections.value.filter(
         (section) =>
-            section.subject_code.toLowerCase().includes(q) ||
-            section.subject_name.toLowerCase().includes(q) ||
-            section.name.toLowerCase().includes(q) ||
-            section.faculty_name.toLowerCase().includes(q),
+            section.subject_code
+                .toLowerCase()
+                .includes(q) ||
+            section.subject_name
+                .toLowerCase()
+                .includes(q) ||
+            section.name
+                .toLowerCase()
+                .includes(q) ||
+            section.faculty_name
+                .toLowerCase()
+                .includes(q),
     );
 });
 
-function enroll(sectionId: string) {
+// =====================================================
+// Enroll
+// =====================================================
+
+async function enroll(sectionId: string) {
     enrolling.value = sectionId;
 
-    router.post(
-        `/my-sections/${sectionId}/self-enroll`,
-        {},
-        {
-            preserveScroll: true,
+    try {
+        const response = await axios.post<EnrollmentResponse>(
+            `/my-sections/${sectionId}/self-enroll`,
+        );
 
-            onFinish: () => {
-                enrolling.value = null;
-            },
-        },
-    );
+        showApiToast(response);
+
+        // Update the local section after successful enrollment
+        const section = sections.value.find(
+            (item) => item.id === sectionId,
+        );
+
+        if (section) {
+            section.is_enrolled = true;
+            section.enrollments_count += 1;
+        }
+    } catch (error) {
+        showApiError(error);
+    } finally {
+        enrolling.value = null;
+    }
 }
 </script>
 
@@ -93,7 +152,9 @@ function enroll(sectionId: string) {
     <div
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-        <!-- Header -->
+        <!-- =====================================================
+             Header
+        ====================================================== -->
         <div class="flex min-w-0 items-center gap-3">
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
@@ -123,7 +184,9 @@ function enroll(sectionId: string) {
             </div>
         </div>
 
-        <!-- Search -->
+        <!-- =====================================================
+             Search
+        ====================================================== -->
         <div class="relative w-full sm:max-w-md">
             <Search
                 class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -136,7 +199,9 @@ function enroll(sectionId: string) {
             />
         </div>
 
-        <!-- Empty State -->
+        <!-- =====================================================
+             Empty State
+        ====================================================== -->
         <div
             v-if="filtered.length === 0"
             class="flex min-h-48 items-center justify-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground sm:min-h-56"
@@ -152,7 +217,9 @@ function enroll(sectionId: string) {
             </div>
         </div>
 
-        <!-- Section Grid -->
+        <!-- =====================================================
+             Section Grid
+        ====================================================== -->
         <div
             v-else
             class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3"
@@ -167,7 +234,9 @@ function enroll(sectionId: string) {
                         : 'hover:bg-muted/20'
                 "
             >
-                <!-- Card Header -->
+                <!-- =================================================
+                     Card Header
+                ================================================== -->
                 <div
                     class="flex min-w-0 items-start justify-between gap-3"
                 >
@@ -196,7 +265,9 @@ function enroll(sectionId: string) {
                     </Badge>
                 </div>
 
-                <!-- Card Details -->
+                <!-- =================================================
+                     Card Details
+                ================================================== -->
                 <div
                     class="mt-4 flex-1 space-y-2 text-xs text-muted-foreground"
                 >
@@ -239,13 +310,18 @@ function enroll(sectionId: string) {
                     </p>
                 </div>
 
-                <!-- Action -->
+                <!-- =================================================
+                     Action
+                ================================================== -->
                 <div class="mt-4 border-t pt-4">
+                    <!-- Not enrolled -->
                     <Button
                         v-if="!section.is_enrolled"
                         class="w-full"
                         size="sm"
-                        :disabled="enrolling === section.id"
+                        :disabled="
+                            enrolling === section.id
+                        "
                         @click="enroll(section.id)"
                     >
                         {{
@@ -255,6 +331,7 @@ function enroll(sectionId: string) {
                         }}
                     </Button>
 
+                    <!-- Already enrolled -->
                     <p
                         v-else
                         class="flex min-h-9 items-center justify-center text-center text-xs font-medium text-primary"
