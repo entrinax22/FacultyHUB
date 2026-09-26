@@ -663,10 +663,22 @@ onMounted(() => {
                             v-for="(comment, index) in submission.ai_feedback
                                 .feedback.inline_comments"
                             :key="index"
-                            class="rounded-lg border px-3 py-2 text-sm"
+                            class="rounded-lg border bg-muted/30 px-3 py-2 text-sm leading-relaxed"
                         >
                             {{ comment }}
                         </div>
+                    </div>
+
+                    <!-- No Inline Comments -->
+
+                    <div
+                        v-else-if="
+                            submission.ai_feedback.feedback &&
+                            submission.ai_feedback.feedback.inline_comments
+                        "
+                        class="text-xs text-muted-foreground"
+                    >
+                        No inline comments were provided.
                     </div>
 
                     <!-- No Feedback Content -->

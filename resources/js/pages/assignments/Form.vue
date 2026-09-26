@@ -148,8 +148,7 @@ const form = ref<AssignmentForm>({
     is_published: props.assignment?.is_published ?? false,
     rubric: props.assignment?.rubric ?? '',
     language: props.assignment?.language ?? 'python',
-    answer_release_at:
-        props.assignment?.answer_release_at?.slice(0, 16) ?? '',
+    answer_release_at: props.assignment?.answer_release_at?.slice(0, 16) ?? '',
     module_id: props.assignment?.module_id ?? 'none',
     duration_minutes: props.assignment?.duration_minutes ?? '',
     proctoring_enabled: props.assignment?.proctoring_enabled ?? false,
@@ -194,9 +193,27 @@ const codeLanguages = [
 */
 
 watch(
-    () => form.value.category,
+    () => form.value.period,
     (value) => {
-        if (value === 'none') {
+        if (!value || value === 'none') {
+            form.value.component_id = 'none';
+            return;
+        }
+
+        const matchingComponents = props.components.filter(
+            (component) =>
+                component.period === value ||
+                component.period === null,
+        );
+
+        if (matchingComponents.length === 1) {
+            form.value.component_id = matchingComponents[0].id;
+        } else if (
+            !matchingComponents.some(
+                (component) =>
+                    component.id === form.value.component_id,
+            )
+        ) {
             form.value.component_id = 'none';
         }
     },
@@ -215,8 +232,7 @@ const filteredComponents = computed(() => {
 
     return props.components.filter(
         (component) =>
-            component.period === form.value.period ||
-            component.period === null,
+            component.period === form.value.period || component.period === null,
     );
 });
 
@@ -274,29 +290,16 @@ function preparePayload(): AssignmentForm {
     return {
         ...form.value,
 
-        period:
-            form.value.period === 'none'
-                ? ''
-                : form.value.period,
+        period: form.value.period === 'none' ? '' : form.value.period,
 
-        category:
-            form.value.category === 'none'
-                ? ''
-                : form.value.category,
+        category: form.value.category === 'none' ? '' : form.value.category,
 
         component_id:
-            form.value.component_id === 'none'
-                ? ''
-                : form.value.component_id,
+            form.value.component_id === 'none' ? '' : form.value.component_id,
 
-        module_id:
-            form.value.module_id === 'none'
-                ? ''
-                : form.value.module_id,
+        module_id: form.value.module_id === 'none' ? '' : form.value.module_id,
 
-        proctoring_enabled: Boolean(
-            form.value.proctoring_enabled,
-        ),
+        proctoring_enabled: Boolean(form.value.proctoring_enabled),
 
         questions: questions.value,
     };
@@ -307,10 +310,7 @@ function clearErrors() {
 }
 
 function handleValidationError(error: unknown): boolean {
-    if (
-        axios.isAxiosError(error) &&
-        error.response?.status === 422
-    ) {
+    if (axios.isAxiosError(error) && error.response?.status === 422) {
         errors.value = error.response.data?.errors ?? {};
 
         return true;
@@ -341,9 +341,7 @@ async function submit() {
 
             showApiToast(response);
 
-            router.visit(
-                `/assignments/${props.assignment.id}`,
-            );
+            router.visit(`/assignments/${props.assignment.id}`);
         } else {
             const response = await axios.post(
                 `/sections/${props.section.id}/assignments`,
@@ -352,25 +350,17 @@ async function submit() {
 
             showApiToast(response);
 
-            const assignmentId =
-                response.data?.data?.id;
+            const assignmentId = response.data?.data?.id;
 
             if (assignmentId) {
-                router.visit(
-                    `/assignments/${assignmentId}`,
-                );
+                router.visit(`/assignments/${assignmentId}`);
             } else {
-                router.visit(
-                    `/sections/${props.section.id}/assignments`,
-                );
+                router.visit(`/sections/${props.section.id}/assignments`);
             }
         }
     } catch (error) {
         if (!handleValidationError(error)) {
-            console.error(
-                'Assignment submission error:',
-                error,
-            );
+            console.error('Assignment submission error:', error);
 
             showApiError(error);
         }
@@ -460,44 +450,35 @@ function applyPdfDraft() {
         form.value.type = pdfDraft.value.type;
     }
 
-    form.value.category =
-        pdfDraft.value.category ?? 'none';
+    form.value.category = pdfDraft.value.category ?? 'none';
 
-    form.value.instructions =
-        pdfDraft.value.instructions;
+    form.value.instructions = pdfDraft.value.instructions;
 
-    form.value.rubric =
-        pdfDraft.value.rubric;
+    form.value.rubric = pdfDraft.value.rubric;
 
     if (pdfDraft.value.language) {
-        form.value.language =
-            pdfDraft.value.language;
+        form.value.language = pdfDraft.value.language;
     }
 
-    questions.value =
-        pdfDraft.value.questions.map((question) => ({
-            id: question.id,
-            question: question.question,
-            points: question.points,
-            choices: question.choices.map((choice) => ({
-                id: choice.id,
-                choice_text: choice.choice_text,
-                is_correct: choice.is_correct,
-            })),
-        }));
+    questions.value = pdfDraft.value.questions.map((question) => ({
+        id: question.id,
+        question: question.question,
+        points: question.points,
+        choices: question.choices.map((choice) => ({
+            id: choice.id,
+            choice_text: choice.choice_text,
+            is_correct: choice.is_correct,
+        })),
+    }));
 
     pdfDraft.value = null;
 
-    toast.success(
-        'Draft applied. You can continue editing before saving.',
-    );
+    toast.success('Draft applied. You can continue editing before saving.');
 }
 </script>
 
 <template>
-    <Head
-        :title="assignment ? 'Edit Assignment' : 'New Assignment'"
-    />
+    <Head :title="assignment ? 'Edit Assignment' : 'New Assignment'" />
 
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
         <!-- Header -->
@@ -505,18 +486,12 @@ function applyPdfDraft() {
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
             >
-                <ClipboardList
-                    class="h-5 w-5 text-primary"
-                />
+                <ClipboardList class="h-5 w-5 text-primary" />
             </div>
 
             <div>
                 <h1 class="text-xl font-semibold">
-                    {{
-                        assignment
-                            ? 'Edit Assignment'
-                            : 'New Assignment'
-                    }}
+                    {{ assignment ? 'Edit Assignment' : 'New Assignment' }}
                 </h1>
 
                 <p class="text-sm text-muted-foreground">
@@ -534,9 +509,7 @@ function applyPdfDraft() {
         >
             <!-- Basic Fields -->
             <div class="grid gap-1.5">
-                <Label for="title">
-                    Assignment Title
-                </Label>
+                <Label for="title"> Assignment Title </Label>
 
                 <Input
                     id="title"
@@ -545,9 +518,7 @@ function applyPdfDraft() {
                     required
                 />
 
-                <InputError
-                    :message="errors.title"
-                />
+                <InputError :message="errors.title" />
             </div>
 
             <!-- Type / Category / Period -->
@@ -556,18 +527,13 @@ function applyPdfDraft() {
                 <div class="grid gap-1.5">
                     <Label>Type</Label>
 
-                    <Select
-                        v-model="form.type"
-                        :disabled="!!assignment"
-                    >
+                    <Select v-model="form.type" :disabled="!!assignment">
                         <SelectTrigger>
                             <SelectValue />
                         </SelectTrigger>
 
                         <SelectContent>
-                            <SelectItem value="essay">
-                                Essay
-                            </SelectItem>
+                            <SelectItem value="essay"> Essay </SelectItem>
 
                             <SelectItem value="mcq">
                                 Multiple Choice
@@ -579,97 +545,59 @@ function applyPdfDraft() {
                         </SelectContent>
                     </Select>
 
-                    <InputError
-                        :message="errors.type"
-                    />
+                    <InputError :message="errors.type" />
                 </div>
 
                 <!-- Category -->
                 <div class="grid gap-1.5">
                     <Label>
                         Category
-                        <span
-                            class="text-muted-foreground"
-                        >
-                            (optional)
-                        </span>
+                        <span class="text-muted-foreground"> (optional) </span>
                     </Label>
 
-                    <Select
-                        v-model="form.category"
-                    >
+                    <Select v-model="form.category">
                         <SelectTrigger>
-                            <SelectValue
-                                placeholder="None"
-                            />
+                            <SelectValue placeholder="None" />
                         </SelectTrigger>
 
                         <SelectContent>
-                            <SelectItem value="none">
-                                None
-                            </SelectItem>
+                            <SelectItem value="none"> None </SelectItem>
 
-                            <SelectItem value="quiz">
-                                Quiz
-                            </SelectItem>
+                            <SelectItem value="quiz"> Quiz </SelectItem>
 
-                            <SelectItem value="exam">
-                                Exam
-                            </SelectItem>
+                            <SelectItem value="exam"> Exam </SelectItem>
 
-                            <SelectItem value="activity">
-                                Activity
-                            </SelectItem>
+                            <SelectItem value="activity"> Activity </SelectItem>
 
-                            <SelectItem value="project">
-                                Project
-                            </SelectItem>
+                            <SelectItem value="project"> Project </SelectItem>
                         </SelectContent>
                     </Select>
 
-                    <InputError
-                        :message="errors.category"
-                    />
+                    <InputError :message="errors.category" />
                 </div>
 
                 <!-- Period -->
                 <div class="grid gap-1.5">
                     <Label>
                         Period
-                        <span
-                            class="text-muted-foreground"
-                        >
-                            (optional)
-                        </span>
+                        <span class="text-muted-foreground"> (optional) </span>
                     </Label>
 
-                    <Select
-                        v-model="form.period"
-                    >
+                    <Select v-model="form.period">
                         <SelectTrigger>
-                            <SelectValue
-                                placeholder="No period"
-                            />
+                            <SelectValue placeholder="No period" />
                         </SelectTrigger>
 
                         <SelectContent>
-                            <SelectItem value="none">
-                                No period
-                            </SelectItem>
+                            <SelectItem value="none"> No period </SelectItem>
 
-                            <SelectItem value="midterm">
-                                Midterm
-                            </SelectItem>
+                            <SelectItem value="midterm"> Midterm </SelectItem>
 
-                            <SelectItem value="finals">
-                                Finals
-                            </SelectItem>
+                            <SelectItem value="finals"> Finals </SelectItem>
                         </SelectContent>
                     </Select>
 
-                    <InputError
-                        :message="errors.period"
-                    />
+                    <InputError :message="errors.period" />
                 </div>
             </div>
 
@@ -677,14 +605,11 @@ function applyPdfDraft() {
             <div
                 v-if="
                     form.category === 'exam' ||
-                    (form.type === 'mcq' &&
-                        form.proctoring_enabled)
+                    (form.type === 'mcq' && form.proctoring_enabled)
                 "
                 class="grid max-w-sm gap-1.5"
             >
-                <Label for="duration_minutes">
-                    Exam Duration (minutes)
-                </Label>
+                <Label for="duration_minutes"> Exam Duration (minutes) </Label>
 
                 <Input
                     id="duration_minutes"
@@ -695,25 +620,17 @@ function applyPdfDraft() {
                     required
                 />
 
-                <p
-                    class="text-xs text-muted-foreground"
-                >
-                    The timer starts when each student
-                    accepts the exam terms and presses
-                    Start Exam.
+                <p class="text-xs text-muted-foreground">
+                    The timer starts when each student accepts the exam terms
+                    and presses Start Exam.
                 </p>
 
-                <InputError
-                    :message="errors.duration_minutes"
-                />
+                <InputError :message="errors.duration_minutes" />
             </div>
 
             <!-- Proctoring -->
             <label
-                v-if="
-                    form.type === 'mcq' ||
-                    form.category === 'exam'
-                "
+                v-if="form.type === 'mcq' || form.category === 'exam'"
                 class="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950"
             >
                 <input
@@ -725,54 +642,34 @@ function applyPdfDraft() {
                 />
 
                 <span>
-                    <span
-                        class="block text-sm font-medium"
-                    >
+                    <span class="block text-sm font-medium">
                         Enable exam monitoring
                     </span>
 
-                    <span
-                        class="block text-xs text-amber-800"
-                    >
-                        Record tab changes and window
-                        resizing during the student
-                        attempt.
+                    <span class="block text-xs text-amber-800">
+                        Record tab changes and window resizing during the
+                        student attempt.
                     </span>
                 </span>
             </label>
 
             <!-- Grading Component -->
-            <div
-                v-if="
-                    form.category !== 'none' &&
-                    components.length
-                "
-                class="grid max-w-sm gap-1.5"
-            >
+            <div v-if="components.length" class="grid max-w-sm gap-1.5">
                 <Label>
                     Grading Component
 
-                    <span
-                        class="text-muted-foreground"
-                    >
-                        (adds an assessment item
-                        automatically)
+                    <span class="text-muted-foreground">
+                        (adds an assessment item automatically)
                     </span>
                 </Label>
 
-                <Select
-                    v-model="form.component_id"
-                >
+                <Select v-model="form.component_id">
                     <SelectTrigger>
-                        <SelectValue
-                            placeholder="Select component…"
-                        />
+                        <SelectValue placeholder="Select component…" />
                     </SelectTrigger>
 
                     <SelectContent>
-                        <SelectItem value="none">
-                            None
-                        </SelectItem>
+                        <SelectItem value="none"> None </SelectItem>
 
                         <SelectItem
                             v-for="component in filteredComponents"
@@ -785,63 +682,40 @@ function applyPdfDraft() {
                                 class="ml-1 text-xs text-muted-foreground capitalize"
                             >
                                 (
-                                {{
-                                    component.period ??
-                                    'general'
-                                }}
+                                {{ component.period ?? 'general' }}
                                 ·
-                                {{
-                                    component.weight_percentage
-                                }}%)
+                                {{ component.weight_percentage }}%)
                             </span>
                         </SelectItem>
                     </SelectContent>
                 </Select>
 
                 <p
-                    v-if="
-                        form.component_id !== 'none'
-                    "
+                    v-if="form.component_id !== 'none'"
                     class="text-xs text-muted-foreground"
                 >
-                    An assessment item named
-                    "{{ form.title || 'this assignment' }}"
-                    will be created under the selected
-                    component.
+                    An assessment item named "{{
+                        form.title || 'this assignment'
+                    }}" will be created under the selected component.
                 </p>
 
-                <InputError
-                    :message="errors.component_id"
-                />
+                <InputError :message="errors.component_id" />
             </div>
 
             <!-- Linked Module -->
-            <div
-                v-if="modules.length"
-                class="grid max-w-sm gap-1.5"
-            >
+            <div v-if="modules.length" class="grid max-w-sm gap-1.5">
                 <Label>
                     Linked Module
-                    <span
-                        class="text-muted-foreground"
-                    >
-                        (optional)
-                    </span>
+                    <span class="text-muted-foreground"> (optional) </span>
                 </Label>
 
-                <Select
-                    v-model="form.module_id"
-                >
+                <Select v-model="form.module_id">
                     <SelectTrigger>
-                        <SelectValue
-                            placeholder="None"
-                        />
+                        <SelectValue placeholder="None" />
                     </SelectTrigger>
 
                     <SelectContent>
-                        <SelectItem value="none">
-                            None
-                        </SelectItem>
+                        <SelectItem value="none"> None </SelectItem>
 
                         <SelectItem
                             v-for="module in modules"
@@ -853,23 +727,14 @@ function applyPdfDraft() {
                     </SelectContent>
                 </Select>
 
-                <InputError
-                    :message="errors.module_id"
-                />
+                <InputError :message="errors.module_id" />
             </div>
 
             <!-- Code Language -->
-            <div
-                v-if="form.type === 'code'"
-                class="grid max-w-xs gap-1.5"
-            >
-                <Label>
-                    Programming Language
-                </Label>
+            <div v-if="form.type === 'code'" class="grid max-w-xs gap-1.5">
+                <Label> Programming Language </Label>
 
-                <Select
-                    v-model="form.language"
-                >
+                <Select v-model="form.language">
                     <SelectTrigger>
                         <SelectValue />
                     </SelectTrigger>
@@ -901,33 +766,22 @@ function applyPdfDraft() {
                     v-model="form.instructions"
                     rows="5"
                     required
-                    class="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                     placeholder="Describe the assignment clearly..."
                 ></textarea>
 
-                <InputError
-                    :message="errors.instructions"
-                />
+                <InputError :message="errors.instructions" />
             </div>
 
             <!-- PDF Import -->
-            <section
-                class="rounded-lg border border-dashed bg-muted/20 p-4"
-            >
-                <div
-                    class="flex flex-wrap items-center justify-between gap-3"
-                >
+            <section class="rounded-lg border border-dashed bg-muted/20 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="font-medium">
-                            Import from PDF
-                        </h2>
+                        <h2 class="font-medium">Import from PDF</h2>
 
-                        <p
-                            class="text-sm text-muted-foreground"
-                        >
-                            AI will create a draft for
-                            you to review before applying
-                            it.
+                        <p class="text-sm text-muted-foreground">
+                            AI will create a draft for you to review before
+                            applying it.
                         </p>
                     </div>
 
@@ -942,16 +796,9 @@ function applyPdfDraft() {
                             class="mr-2 h-4 w-4 animate-spin"
                         />
 
-                        <FileUp
-                            v-else
-                            class="mr-2 h-4 w-4"
-                        />
+                        <FileUp v-else class="mr-2 h-4 w-4" />
 
-                        {{
-                            importingPdf
-                                ? 'Converting…'
-                                : 'Upload PDF'
-                        }}
+                        {{ importingPdf ? 'Converting…' : 'Upload PDF' }}
                     </Button>
 
                     <input
@@ -969,31 +816,20 @@ function applyPdfDraft() {
                     class="mt-4 space-y-4 rounded-md border bg-card p-4"
                 >
                     <div>
-                        <h3 class="font-medium">
-                            Review extracted draft
-                        </h3>
+                        <h3 class="font-medium">Review extracted draft</h3>
 
-                        <p
-                            class="text-xs text-muted-foreground"
-                        >
-                            Review the detected assignment
-                            type and edit the generated
-                            content before applying it.
+                        <p class="text-xs text-muted-foreground">
+                            Review the detected assignment type and edit the
+                            generated content before applying it.
                         </p>
                     </div>
 
-                    <div
-                        class="grid gap-4 sm:grid-cols-3"
-                    >
+                    <div class="grid gap-4 sm:grid-cols-3">
                         <!-- Detected Type -->
                         <div class="grid gap-1.5">
-                            <Label>
-                                Detected type
-                            </Label>
+                            <Label> Detected type </Label>
 
-                            <Select
-                                v-model="pdfDraft.type"
-                            >
+                            <Select v-model="pdfDraft.type">
                                 <SelectTrigger>
                                     <SelectValue />
                                 </SelectTrigger>
@@ -1016,17 +852,11 @@ function applyPdfDraft() {
 
                         <!-- Category -->
                         <div class="grid gap-1.5">
-                            <Label>
-                                Category
-                            </Label>
+                            <Label> Category </Label>
 
-                            <Select
-                                v-model="pdfDraft.category"
-                            >
+                            <Select v-model="pdfDraft.category">
                                 <SelectTrigger>
-                                    <SelectValue
-                                        placeholder="None"
-                                    />
+                                    <SelectValue placeholder="None" />
                                 </SelectTrigger>
 
                                 <SelectContent>
@@ -1034,13 +864,9 @@ function applyPdfDraft() {
                                         None
                                     </SelectItem>
 
-                                    <SelectItem value="quiz">
-                                        Quiz
-                                    </SelectItem>
+                                    <SelectItem value="quiz"> Quiz </SelectItem>
 
-                                    <SelectItem value="exam">
-                                        Exam
-                                    </SelectItem>
+                                    <SelectItem value="exam"> Exam </SelectItem>
 
                                     <SelectItem value="activity">
                                         Activity
@@ -1058,13 +884,9 @@ function applyPdfDraft() {
                             v-if="pdfDraft.type === 'code'"
                             class="grid gap-1.5"
                         >
-                            <Label>
-                                Language
-                            </Label>
+                            <Label> Language </Label>
 
-                            <Select
-                                v-model="pdfDraft.language"
-                            >
+                            <Select v-model="pdfDraft.language">
                                 <SelectTrigger>
                                     <SelectValue
                                         placeholder="Select language"
@@ -1086,21 +908,14 @@ function applyPdfDraft() {
 
                     <!-- Draft Title -->
                     <div class="grid gap-1.5">
-                        <Label for="pdf_draft_title">
-                            Draft title
-                        </Label>
+                        <Label for="pdf_draft_title"> Draft title </Label>
 
-                        <Input
-                            id="pdf_draft_title"
-                            v-model="pdfDraft.title"
-                        />
+                        <Input id="pdf_draft_title" v-model="pdfDraft.title" />
                     </div>
 
                     <!-- Draft Instructions -->
                     <div class="grid gap-1.5">
-                        <Label
-                            for="pdf_draft_instructions"
-                        >
+                        <Label for="pdf_draft_instructions">
                             Draft instructions
                         </Label>
 
@@ -1108,42 +923,30 @@ function applyPdfDraft() {
                             id="pdf_draft_instructions"
                             v-model="pdfDraft.instructions"
                             rows="6"
-                            class="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            class="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                         ></textarea>
                     </div>
 
                     <!-- Draft Rubric -->
                     <div class="grid gap-1.5">
-                        <Label for="pdf_draft_rubric">
-                            Draft rubric
-                        </Label>
+                        <Label for="pdf_draft_rubric"> Draft rubric </Label>
 
                         <textarea
                             id="pdf_draft_rubric"
                             v-model="pdfDraft.rubric"
                             rows="4"
-                            class="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            class="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                         ></textarea>
                     </div>
 
                     <!-- Generated MCQ -->
-                    <div
-                        v-if="pdfDraft.type === 'mcq'"
-                        class="space-y-3"
-                    >
-                        <div
-                            class="flex items-center justify-between"
-                        >
-                            <Label>
-                                Generated questions
-                            </Label>
+                    <div v-if="pdfDraft.type === 'mcq'" class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <Label> Generated questions </Label>
 
-                            <span
-                                class="text-xs text-muted-foreground"
-                            >
-                                Green checks are
-                                AI-predicted answers.
-                                Review them carefully.
+                            <span class="text-xs text-muted-foreground">
+                                Green checks are AI-predicted answers. Review
+                                them carefully.
                             </span>
                         </div>
 
@@ -1164,7 +967,7 @@ function applyPdfDraft() {
                                 <textarea
                                     v-model="question.question"
                                     rows="2"
-                                    class="flex min-h-[60px] flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                    class="flex min-h-[60px] flex-1 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                 ></textarea>
 
                                 <Input
@@ -1183,38 +986,26 @@ function applyPdfDraft() {
                                 :key="choiceIndex"
                                 class="flex items-center gap-2 pl-6"
                             >
-                                <Checkbox
-                                    v-model:checked="
-                                        choice.is_correct
-                                    "
-                                />
+                                <Checkbox v-model:checked="choice.is_correct" />
 
                                 <Input
-                                    v-model="
-                                        choice.choice_text
-                                    "
+                                    v-model="choice.choice_text"
                                     class="flex-1"
                                 />
                             </div>
                         </div>
 
                         <p
-                            v-if="
-                                pdfDraft.questions
-                                    .length === 0
-                            "
+                            v-if="pdfDraft.questions.length === 0"
                             class="text-sm text-muted-foreground"
                         >
-                            No questions were detected.
-                            You can add them after applying
-                            the draft.
+                            No questions were detected. You can add them after
+                            applying the draft.
                         </p>
                     </div>
 
                     <!-- Draft Actions -->
-                    <div
-                        class="flex justify-end gap-2"
-                    >
+                    <div class="flex justify-end gap-2">
                         <Button
                             type="button"
                             variant="ghost"
@@ -1223,10 +1014,7 @@ function applyPdfDraft() {
                             Discard draft
                         </Button>
 
-                        <Button
-                            type="button"
-                            @click="applyPdfDraft"
-                        >
+                        <Button type="button" @click="applyPdfDraft">
                             Apply to assignment
                         </Button>
                     </div>
@@ -1234,15 +1022,10 @@ function applyPdfDraft() {
             </section>
 
             <!-- Rubric -->
-            <div
-                v-if="form.type !== 'mcq'"
-                class="grid gap-1.5"
-            >
+            <div v-if="form.type !== 'mcq'" class="grid gap-1.5">
                 <Label for="rubric">
                     Rubric / Grading Criteria
-                    <span
-                        class="text-muted-foreground"
-                    >
+                    <span class="text-muted-foreground">
                         (used by AI grader)
                     </span>
                 </Label>
@@ -1251,7 +1034,7 @@ function applyPdfDraft() {
                     id="rubric"
                     v-model="form.rubric"
                     rows="4"
-                    class="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                     placeholder="e.g. Content (40%), Organization (30%), Grammar (30%)"
                 ></textarea>
             </div>
@@ -1260,9 +1043,7 @@ function applyPdfDraft() {
             <div class="grid grid-cols-3 gap-4">
                 <!-- Max Score -->
                 <div class="grid gap-1.5">
-                    <Label for="max_score">
-                        Max Score
-                    </Label>
+                    <Label for="max_score"> Max Score </Label>
 
                     <Input
                         id="max_score"
@@ -1272,20 +1053,14 @@ function applyPdfDraft() {
                         required
                     />
 
-                    <InputError
-                        :message="errors.max_score"
-                    />
+                    <InputError :message="errors.max_score" />
                 </div>
 
                 <!-- Passing Score -->
                 <div class="grid gap-1.5">
                     <Label for="passing_score">
                         Passing Score
-                        <span
-                            class="text-muted-foreground"
-                        >
-                            (opt.)
-                        </span>
+                        <span class="text-muted-foreground"> (opt.) </span>
                     </Label>
 
                     <Input
@@ -1295,20 +1070,14 @@ function applyPdfDraft() {
                         min="0"
                     />
 
-                    <InputError
-                        :message="errors.passing_score"
-                    />
+                    <InputError :message="errors.passing_score" />
                 </div>
 
                 <!-- Due Date -->
                 <div class="grid gap-1.5">
                     <Label for="due_date">
                         Due Date
-                        <span
-                            class="text-muted-foreground"
-                        >
-                            (opt.)
-                        </span>
+                        <span class="text-muted-foreground"> (opt.) </span>
                     </Label>
 
                     <Input
@@ -1317,24 +1086,15 @@ function applyPdfDraft() {
                         v-model="form.due_date"
                     />
 
-                    <InputError
-                        :message="errors.due_date"
-                    />
+                    <InputError :message="errors.due_date" />
                 </div>
             </div>
 
             <!-- Answer Release -->
-            <div
-                v-if="form.type === 'mcq'"
-                class="grid max-w-sm gap-1.5"
-            >
+            <div v-if="form.type === 'mcq'" class="grid max-w-sm gap-1.5">
                 <Label for="answer_release_at">
                     Release Answer Key After
-                    <span
-                        class="text-muted-foreground"
-                    >
-                        (opt.)
-                    </span>
+                    <span class="text-muted-foreground"> (opt.) </span>
                 </Label>
 
                 <Input
@@ -1343,24 +1103,13 @@ function applyPdfDraft() {
                     v-model="form.answer_release_at"
                 />
 
-                <InputError
-                    :message="errors.answer_release_at"
-                />
+                <InputError :message="errors.answer_release_at" />
             </div>
 
             <!-- MCQ Question Builder -->
-            <div
-                v-if="form.type === 'mcq'"
-                class="space-y-4"
-            >
-                <div
-                    class="flex items-center justify-between"
-                >
-                    <Label
-                        class="text-base font-semibold"
-                    >
-                        Questions
-                    </Label>
+            <div v-if="form.type === 'mcq'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <Label class="text-base font-semibold"> Questions </Label>
 
                     <Button
                         type="button"
@@ -1368,9 +1117,7 @@ function applyPdfDraft() {
                         size="sm"
                         @click="addQuestion"
                     >
-                        <Plus
-                            class="mr-1.5 h-4 w-4"
-                        />
+                        <Plus class="mr-1.5 h-4 w-4" />
                         Add Question
                     </Button>
                 </div>
@@ -1379,8 +1126,7 @@ function applyPdfDraft() {
                     v-if="questions.length === 0"
                     class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
                 >
-                    No questions yet. Click "Add Question"
-                    to start.
+                    No questions yet. Click "Add Question" to start.
                 </div>
 
                 <div
@@ -1388,34 +1134,24 @@ function applyPdfDraft() {
                     :key="question.id ?? questionIndex"
                     class="space-y-3 rounded-xl border p-4"
                 >
-                    <div
-                        class="flex items-start gap-3"
-                    >
+                    <div class="flex items-start gap-3">
                         <span
                             class="mt-2 shrink-0 text-sm font-semibold text-muted-foreground"
                         >
                             Q{{ questionIndex + 1 }}
                         </span>
 
-                        <div
-                            class="flex-1 space-y-2"
-                        >
+                        <div class="flex-1 space-y-2">
                             <textarea
                                 v-model="question.question"
                                 rows="2"
-                                :placeholder="
-                                    `Question ${questionIndex + 1}`
-                                "
+                                :placeholder="`Question ${questionIndex + 1}`"
                                 required
-                                class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             ></textarea>
 
-                            <div
-                                class="flex items-center gap-2"
-                            >
-                                <Label
-                                    class="text-xs text-muted-foreground"
-                                >
+                            <div class="flex items-center gap-2">
+                                <Label class="text-xs text-muted-foreground">
                                     Points:
                                 </Label>
 
@@ -1434,30 +1170,17 @@ function applyPdfDraft() {
                             variant="ghost"
                             size="sm"
                             class="shrink-0 text-destructive hover:text-destructive"
-                            @click="
-                                removeQuestion(
-                                    questionIndex,
-                                )
-                            "
+                            @click="removeQuestion(questionIndex)"
                         >
-                            <Trash2
-                                class="h-4 w-4"
-                            />
+                            <Trash2 class="h-4 w-4" />
                         </Button>
                     </div>
 
                     <!-- Choices -->
-                    <div
-                        class="ml-8 space-y-2"
-                    >
+                    <div class="ml-8 space-y-2">
                         <div
-                            v-for="(
-                                choice, choiceIndex
-                            ) in question.choices"
-                            :key="
-                                choice.id ??
-                                choiceIndex
-                            "
+                            v-for="(choice, choiceIndex) in question.choices"
+                            :key="choice.id ?? choiceIndex"
                             class="flex items-center gap-2"
                         >
                             <button
@@ -1467,12 +1190,7 @@ function applyPdfDraft() {
                                         ? 'Correct answer'
                                         : 'Set as correct'
                                 "
-                                @click="
-                                    setCorrect(
-                                        questionIndex,
-                                        choiceIndex,
-                                    )
-                                "
+                                @click="setCorrect(questionIndex, choiceIndex)"
                                 class="shrink-0"
                             >
                                 <CheckCircle
@@ -1486,35 +1204,23 @@ function applyPdfDraft() {
                             </button>
 
                             <Input
-                                v-model="
-                                    choice.choice_text
-                                "
-                                :placeholder="
-                                    `Choice ${choiceIndex + 1}`
-                                "
+                                v-model="choice.choice_text"
+                                :placeholder="`Choice ${choiceIndex + 1}`"
                                 class="flex-1"
                                 required
                             />
 
                             <Button
-                                v-if="
-                                    question.choices
-                                        .length > 2
-                                "
+                                v-if="question.choices.length > 2"
                                 type="button"
                                 variant="ghost"
                                 size="sm"
                                 class="shrink-0 text-muted-foreground"
                                 @click="
-                                    removeChoice(
-                                        questionIndex,
-                                        choiceIndex,
-                                    )
+                                    removeChoice(questionIndex, choiceIndex)
                                 "
                             >
-                                <Trash2
-                                    class="h-3.5 w-3.5"
-                                />
+                                <Trash2 class="h-3.5 w-3.5" />
                             </Button>
                         </div>
 
@@ -1523,15 +1229,9 @@ function applyPdfDraft() {
                             variant="ghost"
                             size="sm"
                             class="text-xs"
-                            @click="
-                                addChoice(
-                                    questionIndex,
-                                )
-                            "
+                            @click="addChoice(questionIndex)"
                         >
-                            <Plus
-                                class="mr-1 h-3.5 w-3.5"
-                            />
+                            <Plus class="mr-1 h-3.5 w-3.5" />
                             Add Choice
                         </Button>
                     </div>
@@ -1542,28 +1242,17 @@ function applyPdfDraft() {
             <div class="flex items-center gap-3">
                 <Checkbox
                     id="is_published"
-                    v-model:checked="
-                        form.is_published
-                    "
+                    v-model:checked="form.is_published"
                 />
 
-                <Label
-                    for="is_published"
-                    class="cursor-pointer"
-                >
-                    Publish immediately
-                    (visible to students)
+                <Label for="is_published" class="cursor-pointer">
+                    Publish immediately (visible to students)
                 </Label>
             </div>
 
             <!-- Actions -->
-            <div
-                class="flex gap-3 border-t pt-5"
-            >
-                <Button
-                    type="submit"
-                    :disabled="processing"
-                >
+            <div class="flex gap-3 border-t pt-5">
+                <Button type="submit" :disabled="processing">
                     <LoaderCircle
                         v-if="processing"
                         class="mr-2 h-4 w-4 animate-spin"
@@ -1580,16 +1269,8 @@ function applyPdfDraft() {
                     }}
                 </Button>
 
-                <Button
-                    variant="outline"
-                    as-child
-                    :disabled="processing"
-                >
-                    <Link
-                        :href="
-                            `/sections/${section.id}/assignments`
-                        "
-                    >
+                <Button variant="outline" as-child :disabled="processing">
+                    <Link :href="`/sections/${section.id}/assignments`">
                         Cancel
                     </Link>
                 </Button>

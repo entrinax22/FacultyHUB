@@ -1466,7 +1466,7 @@ class SubmissionController extends Controller
                         'feedback' =>
                             $submission
                                 ->aiFeedback
-                                ->feedback,
+                                ->feedback_json,
                     ]
                     : null,
         ];

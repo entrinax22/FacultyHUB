@@ -139,11 +139,12 @@ class AssignmentController extends Controller
             'section.semester',
             'questions.choices',
             'module',
+            'gradingComponent',
         ]);
 
         $assignment->loadCount('submissions');
 
-        return Inertia::render('assignments/Show', [
+        return Inertia::render('assignments/ViewAssignment', [
             'assignment' => $this->transformAssignment(
                 $assignment,
                 true
@@ -168,17 +169,39 @@ class AssignmentController extends Controller
 
         $section = $assignment->section;
 
+        /*
+        |--------------------------------------------------------------------------
+        | Encrypt the grading component ID ONCE
+        |--------------------------------------------------------------------------
+        */
+
+        $encryptedComponentId = null;
+
+        if ($assignment->gradingComponent) {
+            $encryptedComponentId = Crypt::encryptString(
+                (string) $assignment->gradingComponent->id
+            );
+        }
+
         return Inertia::render('assignments/Form', [
             'assignment' => $this->transformAssignment(
                 $assignment,
-                true
+                true,
+                $encryptedComponentId
             ),
 
-            'section' => $this->transformSection($section),
+            'section' =>
+                $this->transformSection($section),
 
-            'modules' => $this->getSectionModules($section),
+            'modules' =>
+                $this->getSectionModules($section),
 
-            'components' => $this->getSectionComponents($section),
+            'components' =>
+                $this->getSectionComponents(
+                    $section,
+                    $assignment->gradingComponent?->id,
+                    $encryptedComponentId
+                ),
         ]);
     }
 
@@ -294,24 +317,100 @@ class AssignmentController extends Controller
                     },
                 ]);
 
-            if ($search = $request->get('search')) {
+            /*
+            |--------------------------------------------------------------------------
+            | Search
+            |--------------------------------------------------------------------------
+            */
+
+            $search = trim(
+                (string) $request->get('search', '')
+            );
+
+            if ($search !== '') {
                 $query->whereHas(
                     'student',
                     function ($studentQuery) use ($search) {
-                        $studentQuery
-                            ->where(
-                                'name',
+                        $studentQuery->where(function ($query) use ($search) {
+                            /*
+                            |----------------------------------------------------------
+                            | First Name
+                            |----------------------------------------------------------
+                            */
+
+                            $query->where(
+                                'first_name',
                                 'like',
                                 "%{$search}%"
                             )
+
+                            /*
+                            |----------------------------------------------------------
+                            | Last Name
+                            |----------------------------------------------------------
+                            */
+
+                            ->orWhere(
+                                'last_name',
+                                'like',
+                                "%{$search}%"
+                            )
+
+                            /*
+                            |----------------------------------------------------------
+                            | Student Number
+                            |----------------------------------------------------------
+                            */
+
+                            ->orWhere(
+                                'student_no',
+                                'like',
+                                "%{$search}%"
+                            )
+
+                            /*
+                            |----------------------------------------------------------
+                            | Email
+                            |----------------------------------------------------------
+                            */
+
                             ->orWhere(
                                 'email',
                                 'like',
                                 "%{$search}%"
+                            )
+
+                            /*
+                            |----------------------------------------------------------
+                            | Full Name
+                            |----------------------------------------------------------
+                            |
+                            | Allows:
+                            |
+                            | "Juspher Destajo"
+                            | "Destajo Juspher"
+                            |
+                            */
+
+                            ->orWhereRaw(
+                                "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                ["%{$search}%"]
+                            )
+
+                            ->orWhereRaw(
+                                "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                ["%{$search}%"]
                             );
+                        });
                     }
                 );
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Pagination
+            |--------------------------------------------------------------------------
+            */
 
             $perPage = min(
                 max(
@@ -334,18 +433,46 @@ class AssignmentController extends Controller
                 )
                 ->withQueryString();
 
+            /*
+            |--------------------------------------------------------------------------
+            | Transform
+            |--------------------------------------------------------------------------
+            */
+
             $submissions->through(
                 fn ($submission) =>
                     $this->transformSubmission($submission)
             );
 
+            /*
+            |--------------------------------------------------------------------------
+            | Response
+            |--------------------------------------------------------------------------
+            */
+
             return response()->json([
                 'success' => true,
-                'message' => 'Submissions retrieved successfully.',
-                'data' => $submissions->items(),
-                'pagination' => $this->paginationData($submissions),
+
+                'message' =>
+                    'Submissions retrieved successfully.',
+
+                'data' =>
+                    $submissions->items(),
+
+                'pagination' =>
+                    $this->paginationData(
+                        $submissions
+                    ),
+
                 'filters' => [
-                    'search' => $request->get('search'),
+                    'search' =>
+                        $search ?: null,
+
+                    'per_page' =>
+                        $perPage,
+
+                    'page' =>
+                        $page,
                 ],
             ]);
         } catch (\Throwable $e) {
@@ -353,8 +480,12 @@ class AssignmentController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve submissions.',
+
+                'message' =>
+                    'Failed to retrieve submissions.',
+
                 'data' => [],
+
                 'pagination' => null,
             ], 500);
         }
@@ -1104,7 +1235,9 @@ class AssignmentController extends Controller
     }
 
     private function getSectionComponents(
-        Section $section
+        Section $section,
+        ?int $selectedComponentId = null,
+        ?string $selectedEncryptedId = null
     ): array {
         return $section
             ->gradingComponents()
@@ -1116,17 +1249,29 @@ class AssignmentController extends Controller
                 'weight_percentage',
             ])
             ->map(
-                fn (
-                    GradingComponent $component
-                ) => [
-                    'id' => Crypt::encryptString(
-                        (string) $component->id
-                    ),
-                    'name' => $component->name,
-                    'period' => $component->period,
-                    'weight_percentage' =>
-                        $component->weight_percentage,
-                ]
+                function (GradingComponent $component) use (
+                    $selectedComponentId,
+                    $selectedEncryptedId
+                ) {
+                    return [
+                        'id' =>
+                            $component->id === $selectedComponentId
+                                && $selectedEncryptedId
+                                    ? $selectedEncryptedId
+                                    : Crypt::encryptString(
+                                        (string) $component->id
+                                    ),
+
+                        'name' =>
+                            $component->name,
+
+                        'period' =>
+                            $component->period,
+
+                        'weight_percentage' =>
+                            $component->weight_percentage,
+                    ];
+                }
             )
             ->values()
             ->all();
@@ -1214,24 +1359,21 @@ class AssignmentController extends Controller
 
     private function transformAssignment(
         Assignment $assignment,
-        bool $includeQuestions = false
+        bool $includeQuestions = false,
+        ?string $encryptedComponentId = null
     ): array {
         /*
         |--------------------------------------------------------------------------
         | Component
         |--------------------------------------------------------------------------
-        |
-        | Encrypt the grading component ID ONCE.
-        | Because Crypt::encryptString() uses a random IV, encrypting the same
-        | database ID twice produces different ciphertext.
-        |
         */
 
-        $encryptedComponentId = null;
-
         if (
+            $encryptedComponentId === null
+            &&
             $assignment->relationLoaded('gradingComponent')
-            && $assignment->gradingComponent
+            &&
+            $assignment->gradingComponent
         ) {
             $encryptedComponentId = Crypt::encryptString(
                 (string) $assignment->gradingComponent->id
@@ -1255,12 +1397,6 @@ class AssignmentController extends Controller
             );
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Base Assignment Data
-        |--------------------------------------------------------------------------
-        */
-
         $data = [
             'id' => Crypt::encryptString(
                 (string) $assignment->id
@@ -1281,21 +1417,8 @@ class AssignmentController extends Controller
             'category' =>
                 $assignment->category,
 
-            /*
-            |--------------------------------------------------------------------------
-            | IMPORTANT
-            |--------------------------------------------------------------------------
-            | This is the value used by the Assignment Form.
-            */
-
             'component_id' =>
                 $encryptedComponentId,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Component display information
-            |--------------------------------------------------------------------------
-            */
 
             'grading_component' =>
                 $assignment->relationLoaded('gradingComponent')
@@ -1345,12 +1468,6 @@ class AssignmentController extends Controller
             'submissions_count' =>
                 $assignment->submissions_count ?? 0,
 
-            /*
-            |--------------------------------------------------------------------------
-            | Section
-            |--------------------------------------------------------------------------
-            */
-
             'section' =>
                 $assignment->relationLoaded('section')
                 && $assignment->section
@@ -1358,12 +1475,6 @@ class AssignmentController extends Controller
                         $assignment->section
                     )
                     : null,
-
-            /*
-            |--------------------------------------------------------------------------
-            | Module
-            |--------------------------------------------------------------------------
-            */
 
             'module' =>
                 $assignment->relationLoaded('module')
@@ -1377,12 +1488,6 @@ class AssignmentController extends Controller
                     ]
                     : null,
         ];
-
-        /*
-        |--------------------------------------------------------------------------
-        | Questions
-        |--------------------------------------------------------------------------
-        */
 
         if ($includeQuestions) {
             $data['questions'] =

@@ -10,6 +10,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
+/*
+|--------------------------------------------------------------------------
+| Types
+|--------------------------------------------------------------------------
+*/
+
 type Choice = {
     id: string;
     choice_text: string;
@@ -25,25 +31,19 @@ type Question = {
     choices: Choice[];
 };
 
-type CriterionFeedback = {
-    criterion: string;
+type AiFeedbackData = {
     score: number;
-    max: number;
-    feedback: string;
-};
-
-type AiFeedbackJson = {
+    correctness?: number | null;
+    code_quality?: number | null;
+    logic_quality?: number | null;
+    inline_comments?: string[];
     overall_comment?: string | null;
-    criterion_feedback?: CriterionFeedback[];
-    correctness?: number;
-    logic_quality?: number;
-    code_quality?: number;
 };
 
 type AiFeedback = {
+    id?: string;
     score: number;
-    feedback: string | null;
-    feedback_json: AiFeedbackJson;
+    feedback: AiFeedbackData | null;
 };
 
 type Grade = {
@@ -75,13 +75,42 @@ type Submission = {
     id: string;
     status: string;
     content: string | null;
-    answers: Record<string, string | null> | null;
+
+    /*
+     * Backend may return [] for non-MCQ submissions
+     * and an object for MCQ submissions.
+     */
+    answers:
+        | Record<string, string | null>
+        | unknown[]
+        | null;
+
     submitted_at: string;
+
+    started_at?: string | null;
+    expires_at?: string | null;
+
+    student?: {
+        id: string;
+        student_no: string;
+        first_name: string;
+        last_name: string;
+    };
+
     questions: Question[];
+
     ai_feedback: AiFeedback | null;
+
     grade: Grade | null;
+
     assignment: Assignment;
 };
+
+/*
+|--------------------------------------------------------------------------
+| Props
+|--------------------------------------------------------------------------
+*/
 
 const props = defineProps<{
     submission: Submission;
@@ -103,83 +132,101 @@ defineOptions({
     },
 });
 
-/**
- * Whether this is an MCQ submission.
- */
-const isMcq = props.submission.assignment.type === 'mcq';
+/*
+|--------------------------------------------------------------------------
+| Assignment Type
+|--------------------------------------------------------------------------
+*/
 
-/**
- * Whether this is an AI-graded submission.
- */
+const isMcq =
+    props.submission.assignment.type === 'mcq';
+
 const isAiGraded =
     props.submission.assignment.type === 'essay' ||
     props.submission.assignment.type === 'code';
 
-/**
- * AI score can exist even when the Grade record has not
- * been created yet.
- */
-const aiScore = props.submission.ai_feedback?.score ?? null;
+/*
+|--------------------------------------------------------------------------
+| AI Feedback
+|--------------------------------------------------------------------------
+*/
 
-/**
- * Displayed percentage.
- *
- * MCQ:
- *   Uses the released Grade record.
- *
- * Essay / Code:
- *   Uses the Grade record when available.
- *   Otherwise uses the AI feedback score.
- */
+const aiFeedback =
+    props.submission.ai_feedback?.feedback ?? null;
+
+const aiScore =
+    props.submission.ai_feedback?.score ?? null;
+
+/*
+|--------------------------------------------------------------------------
+| Displayed Grade
+|--------------------------------------------------------------------------
+*/
+
 function getDisplayedPercentage(): number | null {
-    if (props.submission.grade?.is_released) {
+    /*
+     * Released Grade takes priority.
+     */
+    if (
+        props.submission.grade?.is_released
+    ) {
         return props.submission.grade.percentage;
     }
 
-    if (isAiGraded && aiScore !== null) {
+    /*
+     * For essay/code, show AI score while
+     * the final grade is not released.
+     */
+    if (
+        isAiGraded &&
+        aiScore !== null
+    ) {
         return aiScore;
     }
 
     return null;
 }
 
-/**
- * Displayed raw score.
- */
 function getDisplayedRawScore(): number | null {
-    if (props.submission.grade?.is_released) {
+    if (
+        props.submission.grade?.is_released
+    ) {
         return props.submission.grade.raw_score;
     }
 
-    if (isAiGraded && aiScore !== null) {
+    if (
+        isAiGraded &&
+        aiScore !== null
+    ) {
         return aiScore;
     }
 
     return null;
 }
 
-/**
- * Displayed maximum score.
- */
 function getDisplayedMaxScore(): number {
-    if (props.submission.grade?.is_released) {
+    if (
+        props.submission.grade?.is_released
+    ) {
         return props.submission.grade.max_score;
     }
 
     return props.submission.assignment.max_score;
 }
 
-/**
- * Check whether a grade can currently be displayed.
- */
 function hasDisplayedGrade(): boolean {
     return getDisplayedRawScore() !== null;
 }
 
-/**
- * Format percentage safely.
- */
-function formatPercentage(value: number | null): string {
+/*
+|--------------------------------------------------------------------------
+| Grade Formatting
+|--------------------------------------------------------------------------
+*/
+
+function formatPercentage(
+    value: number | null,
+): string {
     if (value === null) {
         return '—';
     }
@@ -189,9 +236,6 @@ function formatPercentage(value: number | null): string {
         : `${value.toFixed(1)}%`;
 }
 
-/**
- * Get the label for the displayed score.
- */
 function getScoreLabel(): string {
     if (
         !props.submission.grade?.is_released &&
@@ -204,22 +248,21 @@ function getScoreLabel(): string {
     return 'Your Grade';
 }
 
-/**
- * Determine whether the current choice is selected.
- *
- * Backend already provides is_selected, so this is mainly
- * kept as a helper for template readability.
- */
-function isSelected(choice: Choice): boolean {
+/*
+|--------------------------------------------------------------------------
+| MCQ Helpers
+|--------------------------------------------------------------------------
+*/
+
+function isSelected(
+    choice: Choice,
+): boolean {
     return choice.is_selected;
 }
 
-/**
- * Determine whether the choice should display as incorrect.
- *
- * Only possible when answers have been released.
- */
-function isIncorrectSelected(choice: Choice): boolean {
+function isIncorrectSelected(
+    choice: Choice,
+): boolean {
     return (
         props.answersReleased &&
         choice.is_selected &&
@@ -227,10 +270,9 @@ function isIncorrectSelected(choice: Choice): boolean {
     );
 }
 
-/**
- * Determine whether the choice should display as correct.
- */
-function isCorrectChoice(choice: Choice): boolean {
+function isCorrectChoice(
+    choice: Choice,
+): boolean {
     return (
         props.answersReleased &&
         choice.is_correct === true
@@ -246,14 +288,17 @@ function isCorrectChoice(choice: Choice): boolean {
     <div
         class="flex min-h-full w-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-        <div class="w-full max-w-3xl space-y-5 sm:space-y-6">
+        <div
+            class="w-full max-w-3xl space-y-5 sm:space-y-6"
+        >
 
-            <!-- ========================================================= -->
-            <!-- HEADER -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 HEADER
+            ========================================================== -->
 
-            <div class="flex min-w-0 items-start gap-2 sm:gap-3">
-
+            <div
+                class="flex min-w-0 items-start gap-2 sm:gap-3"
+            >
                 <Button
                     variant="ghost"
                     size="sm"
@@ -265,7 +310,9 @@ function isCorrectChoice(choice: Choice): boolean {
                             `/my-sections/${submission.assignment.section.id}/assignments`
                         "
                     >
-                        <ArrowLeft class="h-4 w-4" />
+                        <ArrowLeft
+                            class="h-4 w-4"
+                        />
 
                         <span class="sr-only">
                             Back to assignments
@@ -273,12 +320,15 @@ function isCorrectChoice(choice: Choice): boolean {
                     </Link>
                 </Button>
 
-                <div class="min-w-0 flex-1">
-
+                <div
+                    class="min-w-0 flex-1"
+                >
                     <h1
                         class="break-words text-xl font-semibold sm:text-2xl"
                     >
-                        {{ submission.assignment.title }}
+                        {{
+                            submission.assignment.title
+                        }}
                     </h1>
 
                     <p
@@ -288,14 +338,21 @@ function isCorrectChoice(choice: Choice): boolean {
                             class="font-medium text-foreground"
                         >
                             {{
-                                submission.assignment.section
+                                submission
+                                    .assignment
+                                    .section
                                     .subject.code
                             }}
                         </span>
 
                         ·
 
-                        {{ submission.assignment.section.name }}
+                        {{
+                            submission
+                                .assignment
+                                .section
+                                .name
+                        }}
                     </p>
 
                     <p
@@ -311,9 +368,9 @@ function isCorrectChoice(choice: Choice): boolean {
                 </div>
             </div>
 
-            <!-- ========================================================= -->
-            <!-- GRADE CARD -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 GRADE CARD
+            ========================================================== -->
 
             <div
                 class="rounded-xl border bg-card p-4 shadow-sm sm:p-5"
@@ -321,11 +378,7 @@ function isCorrectChoice(choice: Choice): boolean {
                 <div
                     class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-
-                    <!-- Grade -->
-
                     <div class="min-w-0">
-
                         <p
                             class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
                         >
@@ -339,14 +392,18 @@ function isCorrectChoice(choice: Choice): boolean {
                             <span
                                 class="text-3xl font-bold sm:text-4xl"
                             >
-                                {{ getDisplayedRawScore() }}
+                                {{
+                                    getDisplayedRawScore()
+                                }}
                             </span>
 
                             <span
                                 class="text-lg text-muted-foreground sm:text-xl"
                             >
                                 /
-                                {{ getDisplayedMaxScore() }}
+                                {{
+                                    getDisplayedMaxScore()
+                                }}
                             </span>
 
                             <span
@@ -365,7 +422,8 @@ function isCorrectChoice(choice: Choice): boolean {
                             class="mt-1 text-sm text-muted-foreground"
                         >
                             {{
-                                submission.status === 'grading'
+                                submission.status ===
+                                'grading'
                                     ? 'Your submission is being graded.'
                                     : 'Grade not yet released.'
                             }}
@@ -376,7 +434,8 @@ function isCorrectChoice(choice: Choice): boolean {
 
                     <Badge
                         :variant="
-                            submission.status === 'approved'
+                            submission.status ===
+                            'approved'
                                 ? 'default'
                                 : 'secondary'
                         "
@@ -384,27 +443,30 @@ function isCorrectChoice(choice: Choice): boolean {
                     >
                         <CheckCircle2
                             v-if="
-                                submission.status === 'approved'
+                                submission.status ===
+                                'approved'
                             "
                             class="mr-1.5 h-4 w-4 shrink-0"
                         />
 
                         <Loader2
                             v-else-if="
-                                submission.status === 'grading'
+                                submission.status ===
+                                'grading'
                             "
                             class="mr-1.5 h-4 w-4 shrink-0 animate-spin"
                         />
 
                         {{
-                            submission.status === 'grading'
+                            submission.status ===
+                            'grading'
                                 ? 'Being graded…'
                                 : submission.status
                         }}
                     </Badge>
                 </div>
 
-                <!-- Grade Remarks -->
+                <!-- Final Grade Remarks -->
 
                 <p
                     v-if="
@@ -426,29 +488,35 @@ function isCorrectChoice(choice: Choice): boolean {
                     "
                     class="mt-4 rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground"
                 >
-                    This score is based on the AI grading result.
-                    Your final grade will be shown when it is
-                    released.
+                    This score is based on the AI
+                    grading result. Your final grade
+                    will be shown when it is released.
                 </p>
             </div>
 
-            <!-- ========================================================= -->
-            <!-- AI FEEDBACK -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 AI FEEDBACK
+            ========================================================== -->
 
             <div
-                v-if="submission.ai_feedback"
+                v-if="
+                    isAiGraded &&
+                    submission.ai_feedback
+                "
                 class="space-y-4 rounded-xl border bg-card p-4 shadow-sm sm:p-5"
             >
+                <!-- Header -->
 
-                <!-- AI Header -->
-
-                <div class="flex items-center gap-2">
+                <div
+                    class="flex items-center gap-2"
+                >
                     <Bot
                         class="h-4 w-4 shrink-0 text-blue-500"
                     />
 
-                    <span class="text-sm font-semibold">
+                    <span
+                        class="text-sm font-semibold"
+                    >
                         AI Feedback
                     </span>
                 </div>
@@ -470,76 +538,42 @@ function isCorrectChoice(choice: Choice): boolean {
                         <span
                             class="text-lg font-bold"
                         >
-                            {{ submission.ai_feedback.score }}
+                            {{
+                                submission
+                                    .ai_feedback
+                                    .score
+                            }}
                             /
-                            {{ submission.assignment.max_score }}
+                            {{
+                                submission
+                                    .assignment
+                                    .max_score
+                            }}
                         </span>
                     </div>
                 </div>
 
-                <!-- Feedback Text -->
-
-                <p
-                    v-if="
-                        submission.ai_feedback.feedback
-                    "
-                    class="break-words text-sm leading-relaxed text-muted-foreground"
-                >
-                    {{ submission.ai_feedback.feedback }}
-                </p>
-
                 <!-- Overall Comment -->
-
-                <p
-                    v-if="
-                        submission.ai_feedback.feedback_json
-                            ?.overall_comment
-                    "
-                    class="break-words text-sm leading-relaxed text-muted-foreground"
-                >
-                    {{
-                        submission.ai_feedback.feedback_json
-                            .overall_comment
-                    }}
-                </p>
-
-                <!-- Criteria -->
 
                 <div
                     v-if="
-                        submission.ai_feedback.feedback_json
-                            ?.criterion_feedback?.length
+                        aiFeedback?.overall_comment
                     "
-                    class="space-y-2"
+                    class="rounded-lg bg-muted/30 p-3"
                 >
-                    <div
-                        v-for="cf in submission.ai_feedback
-                            .feedback_json.criterion_feedback"
-                        :key="cf.criterion"
-                        class="rounded-lg bg-muted/30 p-3 text-sm"
+                    <p
+                        class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
                     >
-                        <div
-                            class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                            <span
-                                class="break-words font-medium"
-                            >
-                                {{ cf.criterion }}
-                            </span>
+                        Overall Feedback
+                    </p>
 
-                            <span
-                                class="shrink-0 text-xs font-medium sm:text-sm"
-                            >
-                                {{ cf.score }} / {{ cf.max }}
-                            </span>
-                        </div>
-
-                        <p
-                            class="mt-1 break-words text-xs leading-relaxed text-muted-foreground"
-                        >
-                            {{ cf.feedback }}
-                        </p>
-                    </div>
+                    <p
+                        class="mt-1 break-words text-sm leading-relaxed"
+                    >
+                        {{
+                            aiFeedback.overall_comment
+                        }}
+                    </p>
                 </div>
 
                 <!-- Code Metrics -->
@@ -547,18 +581,19 @@ function isCorrectChoice(choice: Choice): boolean {
                 <div
                     v-if="
                         submission.assignment.type ===
-                            'code'
+                        'code'
                     "
                     class="grid grid-cols-1 gap-2 sm:grid-cols-3"
                 >
                     <div
                         class="rounded-lg border p-3 text-center"
                     >
-                        <p class="text-lg font-semibold">
+                        <p
+                            class="text-lg font-semibold"
+                        >
                             {{
-                                submission.ai_feedback
-                                    .feedback_json
-                                    ?.correctness ?? '—'
+                                aiFeedback?.correctness ??
+                                '—'
                             }}
                         </p>
 
@@ -572,11 +607,12 @@ function isCorrectChoice(choice: Choice): boolean {
                     <div
                         class="rounded-lg border p-3 text-center"
                     >
-                        <p class="text-lg font-semibold">
+                        <p
+                            class="text-lg font-semibold"
+                        >
                             {{
-                                submission.ai_feedback
-                                    .feedback_json
-                                    ?.logic_quality ?? '—'
+                                aiFeedback?.logic_quality ??
+                                '—'
                             }}
                         </p>
 
@@ -590,11 +626,12 @@ function isCorrectChoice(choice: Choice): boolean {
                     <div
                         class="rounded-lg border p-3 text-center"
                     >
-                        <p class="text-lg font-semibold">
+                        <p
+                            class="text-lg font-semibold"
+                        >
                             {{
-                                submission.ai_feedback
-                                    .feedback_json
-                                    ?.code_quality ?? '—'
+                                aiFeedback?.code_quality ??
+                                '—'
                             }}
                         </p>
 
@@ -605,11 +642,37 @@ function isCorrectChoice(choice: Choice): boolean {
                         </p>
                     </div>
                 </div>
+
+                <!-- Inline Comments -->
+
+                <div
+                    v-if="
+                        aiFeedback?.inline_comments
+                            ?.length
+                    "
+                    class="space-y-2"
+                >
+                    <p
+                        class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                    >
+                        Comments
+                    </p>
+
+                    <div
+                        v-for="(
+                            comment, index
+                        ) in aiFeedback.inline_comments"
+                        :key="index"
+                        class="rounded-lg bg-muted/30 p-3 text-sm"
+                    >
+                        {{ comment }}
+                    </div>
+                </div>
             </div>
 
-            <!-- ========================================================= -->
-            <!-- MCQ ANSWERS -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 MCQ ANSWERS
+            ========================================================== -->
 
             <div
                 v-if="
@@ -619,7 +682,9 @@ function isCorrectChoice(choice: Choice): boolean {
                 class="min-w-0 space-y-3"
             >
                 <div>
-                    <p class="text-sm font-semibold">
+                    <p
+                        class="text-sm font-semibold"
+                    >
                         Your Answers
                     </p>
 
@@ -635,11 +700,12 @@ function isCorrectChoice(choice: Choice): boolean {
                 </div>
 
                 <div
-                    v-for="(q, qi) in submission.questions"
+                    v-for="(
+                        q, qi
+                    ) in submission.questions"
                     :key="q.id"
                     class="min-w-0 space-y-3 rounded-xl border bg-card p-4 shadow-sm"
                 >
-
                     <!-- Question -->
 
                     <div
@@ -683,7 +749,6 @@ function isCorrectChoice(choice: Choice): boolean {
                                     !isIncorrectSelected(c),
                             }"
                         >
-
                             <!-- Selected Indicator -->
 
                             <span
@@ -696,7 +761,7 @@ function isCorrectChoice(choice: Choice): boolean {
                                 }}
                             </span>
 
-                            <!-- Choice Text -->
+                            <!-- Choice -->
 
                             <span
                                 class="min-w-0 flex-1 break-words"
@@ -704,7 +769,7 @@ function isCorrectChoice(choice: Choice): boolean {
                                 {{ c.choice_text }}
                             </span>
 
-                            <!-- Selected Label -->
+                            <!-- Selected -->
 
                             <span
                                 v-if="isSelected(c)"
@@ -713,19 +778,25 @@ function isCorrectChoice(choice: Choice): boolean {
                                 Your answer
                             </span>
 
-                            <!-- Correct Label -->
+                            <!-- Correct -->
 
                             <span
-                                v-if="isCorrectChoice(c)"
+                                v-if="
+                                    isCorrectChoice(c)
+                                "
                                 class="shrink-0 text-xs font-medium text-green-600 dark:text-green-400"
                             >
                                 Correct
                             </span>
 
-                            <!-- Incorrect Label -->
+                            <!-- Incorrect -->
 
                             <span
-                                v-else-if="isIncorrectSelected(c)"
+                                v-else-if="
+                                    isIncorrectSelected(
+                                        c,
+                                    )
+                                "
                                 class="shrink-0 text-xs font-medium text-red-600 dark:text-red-400"
                             >
                                 Incorrect
@@ -741,13 +812,13 @@ function isCorrectChoice(choice: Choice): boolean {
                 v-else-if="isMcq"
                 class="rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm"
             >
-                No question details are available for this
-                submission.
+                No question details are available
+                for this submission.
             </div>
 
-            <!-- ========================================================= -->
-            <!-- ESSAY / CODE SUBMISSION -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 ESSAY / CODE SUBMISSION
+            ========================================================== -->
 
             <div
                 v-if="
@@ -756,11 +827,13 @@ function isCorrectChoice(choice: Choice): boolean {
                 "
                 class="min-w-0 space-y-2"
             >
-                <p class="text-sm font-semibold">
+                <p
+                    class="text-sm font-semibold"
+                >
                     Your Submission
                 </p>
 
-                <!-- Code -->
+                <!-- CODE -->
 
                 <div
                     v-if="
@@ -774,7 +847,7 @@ function isCorrectChoice(choice: Choice): boolean {
                     >{{ submission.content }}</pre>
                 </div>
 
-                <!-- Essay -->
+                <!-- ESSAY -->
 
                 <div
                     v-else
