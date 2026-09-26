@@ -558,7 +558,7 @@ class GradingController extends Controller
                             $submission->aiFeedback->score,
 
                         'feedback' =>
-                            $submission->aiFeedback->feedback,
+                            $submission->aiFeedback->feedback_json,
                     ]
                     : null,
         ];
