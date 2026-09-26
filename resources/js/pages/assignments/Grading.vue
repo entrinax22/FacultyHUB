@@ -35,12 +35,17 @@ type Question = {
     choices: Choice[];
 };
 
+type InlineComment = {
+    line: number;
+    comment: string;
+};
+
 type AiFeedbackContent = {
     score: number;
     correctness: number;
     code_quality: number;
     logic_quality: number;
-    inline_comments: string[];
+    inline_comments: InlineComment[];
     overall_comment: string;
 };
 
@@ -665,7 +670,15 @@ onMounted(() => {
                             :key="index"
                             class="rounded-lg border bg-muted/30 px-3 py-2 text-sm leading-relaxed"
                         >
-                            {{ comment }}
+                            <div class="flex items-start gap-3">
+                                <Badge variant="outline" class="shrink-0">
+                                    Line {{ comment.line }}
+                                </Badge>
+
+                                <p class="text-sm leading-relaxed">
+                                    {{ comment.comment }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -675,6 +688,7 @@ onMounted(() => {
                         v-else-if="
                             submission.ai_feedback.feedback &&
                             submission.ai_feedback.feedback.inline_comments
+                                ?.length === 0
                         "
                         class="text-xs text-muted-foreground"
                     >
