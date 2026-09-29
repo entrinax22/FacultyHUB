@@ -57,6 +57,7 @@ type Section = {
     faculty: {
         id: string;
         name: string;
+        email?: string;
     };
 };
 
@@ -134,9 +135,11 @@ const isFaculty = computed(() => page.props.auth.role === 'faculty');
 */
 
 const sections = ref<Section[]>([]);
+
 const semesters = ref<Semester[]>([]);
 
 const selectedSemesterId = ref('');
+
 const search = ref('');
 
 /*
@@ -170,9 +173,63 @@ const pagination = ref<Pagination>({
 });
 
 const loading = ref(false);
+
 const deletingId = ref<string | null>(null);
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/*
+|--------------------------------------------------------------------------
+| Semester Initialization
+|--------------------------------------------------------------------------
+|
+| The active semester should only be selected automatically when there is
+| no current semester selection.
+|
+| IMPORTANT:
+| Do not call this after every section request because the user may have
+| manually selected another semester.
+|
+*/
+
+function setDefaultSemester() {
+    if (selectedSemesterId.value) {
+        return;
+    }
+
+    const activeSemester = semesters.value.find(
+        (semester) => semester.is_active,
+    );
+
+    if (activeSemester) {
+        selectedSemesterId.value = activeSemester.id;
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Update Semester Options
+|--------------------------------------------------------------------------
+|
+| Laravel Crypt::encryptString() generates a different encrypted value
+| every time it is called.
+|
+| Therefore, replacing semesters.value after every API request can cause
+| the currently selected encrypted ID to no longer match any SelectItem.
+|
+| We only initialize the semester list when it is empty.
+|
+*/
+
+function initializeSemesters(items: Semester[]) {
+    if (semesters.value.length > 0) {
+        return;
+    }
+
+    semesters.value = items;
+
+    setDefaultSemester();
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -189,10 +246,12 @@ async function loadSections(
     try {
         /*
         |--------------------------------------------------------------------------
-        | Faculty can only request their own sections.
-        |
-        | Admin can use the selected scope.
+        | Faculty Restriction
         |--------------------------------------------------------------------------
+        |
+        | Faculty can only request their own sections.
+        | Admin can use the selected scope.
+        |
         */
 
         const scope = isFaculty.value ? 'mine' : sectionScope.value;
@@ -213,21 +272,45 @@ async function loadSections(
 
         if (!response.data.success) {
             showApiError(response.data.message);
+
             return;
-        }
-
-        sections.value = response.data.data ?? [];
-
-        pagination.value = response.data.pagination;
-
-        if (response.data.filters?.semesters) {
-            semesters.value = response.data.filters.semesters;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Keep frontend scope synchronized with
-        | the backend response.
+        | Sections
+        |--------------------------------------------------------------------------
+        */
+
+        sections.value = response.data.data ?? [];
+
+        /*
+        |--------------------------------------------------------------------------
+        | Pagination
+        |--------------------------------------------------------------------------
+        */
+
+        pagination.value = response.data.pagination;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Semester Options
+        |--------------------------------------------------------------------------
+        |
+        | Only initialize the semester list once.
+        |
+        | Do NOT replace semesters.value here after the user has selected
+        | a semester because encrypted IDs can change between requests.
+        |
+        */
+
+        if (response.data.filters?.semesters) {
+            initializeSemesters(response.data.filters.semesters);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Section Scope
         |--------------------------------------------------------------------------
         */
 
@@ -284,11 +367,27 @@ function changeSectionScope(value: unknown) {
 */
 
 function changeSemester(value: unknown) {
-    if (typeof value !== 'string') {
+    if (typeof value !== 'string' || !value) {
         return;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Keep the user's selected encrypted semester ID.
+    |--------------------------------------------------------------------------
+    */
+
     selectedSemesterId.value = value;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reload sections using the selected semester.
+    |--------------------------------------------------------------------------
+    |
+    | Even if the selected semester has zero sections, the selected value
+    | remains unchanged because semesters.value is not replaced.
+    |
+    */
 
     loadSections(1, pagination.value.per_page);
 }
@@ -362,8 +461,8 @@ async function deleteSection(section: Section) {
 
         /*
         |--------------------------------------------------------------------------
-        | If deleting the last item on the current
-        | page, move back one page when necessary.
+        | If deleting the last item on the current page,
+        | move back one page when necessary.
         |--------------------------------------------------------------------------
         */
 
@@ -410,6 +509,16 @@ onMounted(() => {
     if (isFaculty.value) {
         sectionScope.value = 'mine';
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | The backend automatically filters to the active semester when no
+    | semester_id is supplied.
+    |
+    | The response also contains the semester options.
+    | initializeSemesters() will select the active semester.
+    |--------------------------------------------------------------------------
+    */
 
     loadSections();
 });
@@ -476,10 +585,6 @@ onMounted(() => {
                 </Button>
             </div>
         </div>
-
-        <!-- ========================================================= -->
-        <!-- TOOLBAR -->
-        <!-- ========================================================= -->
 
         <!-- ========================================================= -->
         <!-- TOOLBAR -->
@@ -604,9 +709,11 @@ onMounted(() => {
             <div
                 v-for="section in sections"
                 :key="section.id"
-                class="flex min-w-0 flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/20"
+                class="flex h-full min-w-0 flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/20"
             >
+                <!-- ===================================================== -->
                 <!-- Card Header -->
+                <!-- ===================================================== -->
 
                 <div class="flex min-w-0 items-start justify-between gap-3">
                     <div class="min-w-0 flex-1">
@@ -637,9 +744,13 @@ onMounted(() => {
                     </Badge>
                 </div>
 
+                <!-- ===================================================== -->
                 <!-- Card Information -->
+                <!-- ===================================================== -->
 
-                <div class="mt-4 space-y-2 text-xs text-muted-foreground">
+                <div
+                    class="mt-4 min-h-[104px] space-y-2 text-xs text-muted-foreground"
+                >
                     <!-- Schedule -->
 
                     <div
@@ -648,22 +759,26 @@ onMounted(() => {
                     >
                         <BookOpen class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 
-                        <span class="break-words">
+                        <span class="line-clamp-2 break-words">
                             {{ section.schedule }}
                         </span>
                     </div>
 
                     <!-- Room -->
 
-                    <div
-                        v-if="section.room"
-                        class="flex min-w-0 items-start gap-2"
-                    >
+                    <div class="flex min-w-0 items-start gap-2">
                         <span class="w-3.5 shrink-0 text-center"> • </span>
 
-                        <span class="break-words">
-                            Room
-                            {{ section.room }}
+                        <span
+                            v-if="section.room"
+                            class="truncate"
+                            :title="`Room ${section.room}`"
+                        >
+                            Room {{ section.room }}
+                        </span>
+
+                        <span v-else class="text-muted-foreground/50">
+                            No room assigned
                         </span>
                     </div>
 
@@ -692,12 +807,17 @@ onMounted(() => {
                             {{ section.faculty.name }}
                         </span>
                     </div>
+
+                    <!-- Faculty Placeholder -->
+                    <div v-else class="h-4" />
                 </div>
 
+                <!-- ===================================================== -->
                 <!-- Card Actions -->
+                <!-- ===================================================== -->
 
                 <div
-                    class="mt-5 grid grid-cols-[1fr_auto_auto] gap-2 border-t pt-4"
+                    class="mt-auto grid grid-cols-[1fr_auto_auto] gap-2 border-t pt-4"
                 >
                     <!-- View -->
 
@@ -760,8 +880,6 @@ onMounted(() => {
             v-if="pagination.total > 0"
             class="flex flex-col gap-4 border-t pt-4"
         >
-            <!-- Pagination Controls -->
-
             <div
                 class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
             >

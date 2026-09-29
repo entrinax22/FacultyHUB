@@ -8,6 +8,7 @@ use App\Models\Subject;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -54,6 +55,130 @@ class SectionController extends Controller
             'semesters' => $semesters,
             'subjects' => $subjects,
         ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'semester_id' => [
+                    'required',
+                ],
+
+                'subject_id' => [
+                    'required',
+                ],
+
+                'schedule' => [
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
+
+                'room' => [
+                    'nullable',
+                    'string',
+                    'max:100',
+                ],
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Decrypt Semester / Subject IDs
+            |--------------------------------------------------------------------------
+            */
+
+            try {
+                $semesterId = Crypt::decryptString(
+                    $validated['semester_id']
+                );
+
+                $subjectId = Crypt::decryptString(
+                    $validated['subject_id']
+                );
+            } catch (DecryptException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid semester or subject ID.',
+                ], 422);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate Semester
+            |--------------------------------------------------------------------------
+            */
+
+            if (!Semester::where('id', $semesterId)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected semester does not exist.',
+                ], 422);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Validate Subject
+            |--------------------------------------------------------------------------
+            */
+
+            if (!Subject::where('id', $subjectId)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected subject does not exist.',
+                ], 422);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create Section
+            |--------------------------------------------------------------------------
+            */
+
+            $user = $request->user();
+
+            if (!$user->isAdmin() && !$user->isFaculty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to create a section.',
+                ], 403);
+            }
+
+            $section = Section::create([
+                'name' => $validated['name'],
+                'semester_id' => $semesterId,
+                'subject_id' => $subjectId,
+                'faculty_id' => $user->id,
+                'schedule' => $validated['schedule'] ?? null,
+                'room' => $validated['room'] ?? null,
+            ]);
+            
+
+            /*
+            |--------------------------------------------------------------------------
+            | Response
+            |--------------------------------------------------------------------------
+            */
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Section created successfully.',
+            ], 201);
+
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create section.',
+            ], 500);
+        }
     }
 
     public function show(string $id): Response
@@ -398,7 +523,6 @@ class SectionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Sections retrieved successfully.',
-
                 'data' => $sections->items(),
 
                 'pagination' => [
