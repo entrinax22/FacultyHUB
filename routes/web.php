@@ -27,6 +27,42 @@ Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
+Route::inertia('/', 'Welcome', [
+    'canRegister' => Features::enabled(Features::registration()),
+])->name('home');
+
+/*
+|--------------------------------------------------------------------------
+| SEO
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/robots.txt', function () {
+    return response(
+        "User-agent: *\n"
+        . "Disallow: /admin/\n"
+        . "Disallow: /dashboard\n"
+        . "Disallow: /my-sections/\n"
+        . "Disallow: /subjects/\n"
+        . "Disallow: /sections/\n"
+        . "Disallow: /students/\n"
+        . "Disallow: /assignments/\n"
+        . "Disallow: /submissions/\n"
+        . "Disallow: /grades/\n"
+        . "Disallow: /attendance/\n"
+        . "Disallow: /modules/\n"
+        . "Disallow: /forgot-password/\n"
+        . "Sitemap: " . url('/sitemap.xml') . "\n",
+        200
+    )->header('Content-Type', 'text/plain');
+})->name('robots');
+
+Route::get('/sitemap.xml', function () {
+    return response()
+        ->view('sitemap')
+        ->header('Content-Type', 'application/xml');
+})->name('sitemap');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('module-files/{id}/serve',[ModuleController::class, 'serveFile'])->name('modules.files.serve');
