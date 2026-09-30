@@ -212,9 +212,52 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="FacultyLMS — Learning Management for Faculty & Students" />
+    <Head>
+        <title>FacultyLMS — Learning Management for Faculty & Students</title>
 
-    <div class="flex min-h-screen min-w-0 flex-col bg-background text-foreground">
+        <meta
+            name="description"
+            content="FacultyLMS is a learning management system that connects faculty and students through course materials, assignments, quizzes, attendance, grading, feedback, and academic progress."
+        />
+
+        <meta name="robots" content="index, follow" />
+
+        <link rel="canonical" href="https://www.faculty-lms.online/" />
+
+        <!-- Open Graph / Facebook / Messenger -->
+        <meta property="og:type" content="website" />
+
+        <meta
+            property="og:title"
+            content="FacultyLMS — Learning Management for Faculty & Students"
+        />
+
+        <meta
+            property="og:description"
+            content="Connect faculty and students through course materials, assignments, quizzes, attendance, grading, feedback, and academic progress."
+        />
+
+        <meta property="og:url" content="https://www.faculty-lms.online/" />
+
+        <meta property="og:site_name" content="FacultyLMS" />
+
+        <!-- Twitter / X -->
+        <meta name="twitter:card" content="summary" />
+
+        <meta
+            name="twitter:title"
+            content="FacultyLMS — Learning Management for Faculty & Students"
+        />
+
+        <meta
+            name="twitter:description"
+            content="A learning management system for faculty and students with modules, assessments, attendance, grading, feedback, and academic progress."
+        />
+    </Head>
+
+    <div
+        class="flex min-h-screen min-w-0 flex-col bg-background text-foreground"
+    >
         <!-- =========================================================
              NAVBAR
         ========================================================== -->
@@ -230,7 +273,7 @@ onBeforeUnmount(() => {
                     class="group flex min-w-0 shrink-0 items-center gap-2.5"
                 >
                     <div
-                        class="flex size-9 shrink-0 items-center justify-center rounded-xl brand-gradient shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:rotate-3"
+                        class="brand-gradient flex size-9 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:rotate-3"
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -354,7 +397,7 @@ onBeforeUnmount(() => {
                                 >
                                     <!-- Avatar -->
                                     <div
-                                        class="flex size-7 shrink-0 items-center justify-center rounded-full brand-gradient transition-transform duration-300 hover:scale-105"
+                                        class="brand-gradient flex size-7 shrink-0 items-center justify-center rounded-full transition-transform duration-300 hover:scale-105"
                                     >
                                         <User
                                             class="size-4"
@@ -375,15 +418,10 @@ onBeforeUnmount(() => {
                                 </Button>
                             </DropdownMenuTrigger>
 
-                            <DropdownMenuContent
-                                align="end"
-                                class="w-60"
-                            >
+                            <DropdownMenuContent align="end" class="w-60">
                                 <!-- User Information -->
                                 <div class="px-3 py-2.5">
-                                    <p
-                                        class="truncate text-sm font-semibold"
-                                    >
+                                    <p class="truncate text-sm font-semibold">
                                         {{ user.name }}
                                     </p>
 
@@ -472,9 +510,7 @@ onBeforeUnmount(() => {
                             as-child
                             class="transition-all duration-200 hover:-translate-y-0.5"
                         >
-                            <Link :href="login()">
-                                Log in
-                            </Link>
+                            <Link :href="login()"> Log in </Link>
                         </Button>
 
                         <Button
@@ -485,13 +521,11 @@ onBeforeUnmount(() => {
                             as-child
                         >
                             <Link :href="register()">
-                                <span class="hidden xs:inline">
+                                <span class="xs:inline hidden">
                                     Get Started
                                 </span>
 
-                                <span class="xs:hidden">
-                                    Sign Up
-                                </span>
+                                <span class="xs:hidden"> Sign Up </span>
                             </Link>
                         </Button>
                     </template>
@@ -511,11 +545,11 @@ onBeforeUnmount(() => {
             >
                 <!-- Background -->
                 <div
-                    class="glow-animation absolute inset-0 -z-10 brand-gradient"
+                    class="glow-animation brand-gradient absolute inset-0 -z-10"
                 ></div>
 
                 <div
-                    class="float-animation absolute -right-32 -top-32 -z-10 size-[500px] rounded-full bg-emerald-400/10 blur-3xl"
+                    class="float-animation absolute -top-32 -right-32 -z-10 size-[500px] rounded-full bg-emerald-400/10 blur-3xl"
                 ></div>
 
                 <div
@@ -524,15 +558,13 @@ onBeforeUnmount(() => {
                 ></div>
 
                 <div
-                    class="mx-auto max-w-7xl px-4 pb-20 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:px-8 lg:pt-28"
+                    class="mx-auto max-w-7xl px-4 pt-16 pb-20 text-center sm:px-6 sm:pt-24 sm:pb-24 lg:px-8 lg:pt-28"
                 >
                     <!-- Badge -->
                     <div
                         class="fade-up mx-auto mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/20 bg-background/70 px-3 py-2 text-[11px] font-semibold shadow-sm backdrop-blur sm:px-4 sm:text-xs"
                     >
-                        <Sparkles
-                            class="size-3.5 shrink-0 text-primary"
-                        />
+                        <Sparkles class="size-3.5 shrink-0 text-primary" />
 
                         <span class="truncate">
                             Learning Management System for Faculty & Students
@@ -545,7 +577,7 @@ onBeforeUnmount(() => {
 
                     <!-- Heading -->
                     <h1
-                        class="fade-up mx-auto max-w-4xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl"
+                        class="fade-up mx-auto max-w-4xl text-4xl leading-[1.05] font-extrabold tracking-tight sm:text-6xl lg:text-7xl"
                         style="animation-delay: 100ms"
                     >
                         One platform for
@@ -560,9 +592,9 @@ onBeforeUnmount(() => {
                         style="animation-delay: 200ms"
                     >
                         FacultyLMS connects faculty and students in one
-                        streamlined learning environment — from course
-                        materials and assessments to attendance, grading,
-                        feedback, and academic progress.
+                        streamlined learning environment — from course materials
+                        and assessments to attendance, grading, feedback, and
+                        academic progress.
                     </p>
 
                     <!-- =================================================
@@ -596,9 +628,7 @@ onBeforeUnmount(() => {
                                 class="w-full px-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-md sm:w-auto"
                                 as-child
                             >
-                                <Link :href="register()">
-                                    Create Account
-                                </Link>
+                                <Link :href="register()"> Create Account </Link>
                             </Button>
                         </template>
 
@@ -657,23 +687,17 @@ onBeforeUnmount(() => {
                         style="animation-delay: 400ms"
                     >
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2
-                                class="size-3.5 text-primary"
-                            />
+                            <CheckCircle2 class="size-3.5 text-primary" />
                             Built for faculty and students
                         </span>
 
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2
-                                class="size-3.5 text-primary"
-                            />
+                            <CheckCircle2 class="size-3.5 text-primary" />
                             AI-assisted learning and grading
                         </span>
 
                         <span class="flex items-center gap-1.5">
-                            <CheckCircle2
-                                class="size-3.5 text-primary"
-                            />
+                            <CheckCircle2 class="size-3.5 text-primary" />
                             Centralized academic records
                         </span>
                     </div>
@@ -687,15 +711,13 @@ onBeforeUnmount(() => {
                 id="features"
                 class="scroll-mt-16 bg-muted/30 py-16 sm:py-24"
             >
-                <div
-                    class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
-                >
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <!-- Section Heading -->
                     <div
                         class="scroll-reveal mx-auto mb-10 max-w-2xl text-center sm:mb-12"
                     >
                         <p
-                            class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-primary"
+                            class="mb-3 text-xs font-bold tracking-[0.2em] text-primary uppercase"
                         >
                             Everything in one place
                         </p>
@@ -709,10 +731,9 @@ onBeforeUnmount(() => {
                         <p
                             class="mt-4 text-sm leading-6 text-muted-foreground sm:text-base"
                         >
-                            FacultyLMS gives faculty the tools to manage
-                            their classes and gives students a simple place
-                            to learn, submit work, and track their academic
-                            progress.
+                            FacultyLMS gives faculty the tools to manage their
+                            classes and gives students a simple place to learn,
+                            submit work, and track their academic progress.
                         </p>
                     </div>
 
@@ -755,10 +776,10 @@ onBeforeUnmount(() => {
             <!-- =========================================================
                  FACULTY + STUDENT EXPERIENCE
             ========================================================== -->
-            <section class="border-b border-border/40 bg-background py-16 sm:py-20">
-                <div
-                    class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
-                >
+            <section
+                class="border-b border-border/40 bg-background py-16 sm:py-20"
+            >
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div class="grid gap-6 lg:grid-cols-2">
                         <!-- Faculty -->
                         <div
@@ -771,30 +792,26 @@ onBeforeUnmount(() => {
                             </div>
 
                             <p
-                                class="text-xs font-bold uppercase tracking-[0.2em] text-primary"
+                                class="text-xs font-bold tracking-[0.2em] text-primary uppercase"
                             >
                                 For Faculty
                             </p>
 
-                            <h3
-                                class="mt-2 text-2xl font-bold tracking-tight"
-                            >
+                            <h3 class="mt-2 text-2xl font-bold tracking-tight">
                                 Manage your classes with less effort
                             </h3>
 
                             <p
                                 class="mt-3 text-sm leading-6 text-muted-foreground"
                             >
-                                Organize sections, publish learning
-                                modules, create assessments, monitor
-                                attendance, manage grades, and use AI-assisted
-                                grading tools from one centralized workspace.
+                                Organize sections, publish learning modules,
+                                create assessments, monitor attendance, manage
+                                grades, and use AI-assisted grading tools from
+                                one centralized workspace.
                             </p>
 
                             <div class="mt-6 space-y-3">
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -804,33 +821,23 @@ onBeforeUnmount(() => {
                                     </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
 
-                                    <span>
-                                        Create and manage assessments
-                                    </span>
+                                    <span> Create and manage assessments </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
 
-                                    <span>
-                                        Track attendance and grades
-                                    </span>
+                                    <span> Track attendance and grades </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -854,30 +861,26 @@ onBeforeUnmount(() => {
                             </div>
 
                             <p
-                                class="text-xs font-bold uppercase tracking-[0.2em] text-primary"
+                                class="text-xs font-bold tracking-[0.2em] text-primary uppercase"
                             >
                                 For Students
                             </p>
 
-                            <h3
-                                class="mt-2 text-2xl font-bold tracking-tight"
-                            >
+                            <h3 class="mt-2 text-2xl font-bold tracking-tight">
                                 Keep your learning organized
                             </h3>
 
                             <p
                                 class="mt-3 text-sm leading-6 text-muted-foreground"
                             >
-                                Access course materials, complete
-                                assignments and quizzes, monitor deadlines,
-                                check attendance, and keep track of your
-                                academic progress in one place.
+                                Access course materials, complete assignments
+                                and quizzes, monitor deadlines, check
+                                attendance, and keep track of your academic
+                                progress in one place.
                             </p>
 
                             <div class="mt-6 space-y-3">
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -887,9 +890,7 @@ onBeforeUnmount(() => {
                                     </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -899,9 +900,7 @@ onBeforeUnmount(() => {
                                     </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -911,9 +910,7 @@ onBeforeUnmount(() => {
                                     </span>
                                 </div>
 
-                                <div
-                                    class="flex items-start gap-2.5 text-sm"
-                                >
+                                <div class="flex items-start gap-2.5 text-sm">
                                     <CheckCircle2
                                         class="mt-0.5 size-4 shrink-0 text-primary"
                                     />
@@ -933,7 +930,7 @@ onBeforeUnmount(() => {
             ========================================================== -->
             <section
                 id="get-started"
-                class="scroll-mt-16 brand-gradient py-16 sm:py-20"
+                class="brand-gradient scroll-mt-16 py-16 sm:py-20"
             >
                 <div
                     class="scroll-reveal mx-auto max-w-3xl px-4 text-center sm:px-6"
@@ -1006,9 +1003,7 @@ onBeforeUnmount(() => {
         <!-- =========================================================
              FOOTER
         ========================================================== -->
-        <footer
-            class="border-t border-border/60 bg-background py-6"
-        >
+        <footer class="border-t border-border/60 bg-background py-6">
             <div
                 class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-center text-xs text-muted-foreground sm:flex-row sm:px-6 sm:text-left lg:px-8"
             >
