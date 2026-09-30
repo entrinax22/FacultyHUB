@@ -14,22 +14,6 @@ class CreateNewUser implements CreatesNewUsers
 {
     use PasswordValidationRules, ProfileValidationRules;
 
-    private function splitName(string $name): array
-    {
-        $name = trim(preg_replace('/\s+/', ' ', $name) ?? $name);
-
-        if ($name === '') {
-            return ['first' => 'Student', 'last' => ''];
-        }
-
-        $parts = explode(' ', $name, 2);
-
-        return [
-            'first' => $parts[0] ?? 'Student',
-            'last' => $parts[1] ?? '',
-        ];
-    }
-
     /**
      * Validate and create a newly registered user.
      *
@@ -48,7 +32,9 @@ class CreateNewUser implements CreatesNewUsers
 
         return DB::transaction(function () use ($input): User {
             $user = User::create([
-                'name' => $input['name'],
+                'name' => $input['first_name'] . " " . $input['last_name'],
+                'first_name' => $input['first_name'],
+                'last_name' => $input['last_name'],
                 'email' => $input['email'],
                 'password' => $input['password'],
                 'role' => 'student',
@@ -69,16 +55,15 @@ class CreateNewUser implements CreatesNewUsers
                 return $user;
             }
 
-            $nameParts = $this->splitName($user->name);
 
             Student::create([
                 'user_id'    => $user->id,
                 'student_no' => $input['student_no'],
-                'first_name' => $nameParts['first'],
-                'last_name'  => $nameParts['last'],
+                'first_name' => $input['first_name'],
+                'last_name'  => $input['last_name'],
                 'email'      => $user->email,
-                'course'     => 'N/A',
-                'year_level' => 1,
+                'course'     => $input['course'],
+                'year_level' => $input['year_level'] ?? 1,
             ]);
 
             return $user;

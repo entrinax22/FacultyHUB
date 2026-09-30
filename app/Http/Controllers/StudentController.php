@@ -39,35 +39,55 @@ class StudentController extends Controller
             'enrollments.semester',
         ]);
 
-        $student->id = Crypt::encryptString((string) $student->id);
-
-        foreach ($student->enrollments as $enrollment) {
-            $enrollment->id = Crypt::encryptString((string) $enrollment->id);
-
-            if ($enrollment->section) {
-                $enrollment->section->id = Crypt::encryptString(
-                    (string) $enrollment->section->id
-                );
-
-                if ($enrollment->section->subject) {
-                    $enrollment->section->subject->id = Crypt::encryptString(
-                        (string) $enrollment->section->subject->id
-                    );
-                }
-            }
-
-            if ($enrollment->semester) {
-                $enrollment->semester->id = Crypt::encryptString(
-                    (string) $enrollment->semester->id
-                );
-            }
-        }
-
         return Inertia::render('students/Show', [
-            'student' => $student,
+            'student' => [
+                'id' => Crypt::encryptString((string) $student->id),
+                'student_no' => $student->student_no,
+                'first_name' => $student->first_name,
+                'last_name' => $student->last_name,
+                'email' => $student->email,
+                'course' => $student->course,
+                'year_level' => $student->year_level,
+
+                'enrollments' => $student->enrollments->map(
+                    function ($enrollment) {
+                        return [
+                            'id' => Crypt::encryptString(
+                                (string) $enrollment->id
+                            ),
+
+                            'status' => $enrollment->status,
+
+                            'semester' => [
+                                'id' => Crypt::encryptString(
+                                    (string) $enrollment->semester->id
+                                ),
+                                'name' => $enrollment->semester->name,
+                                'school_year' => $enrollment->semester->school_year,
+                            ],
+
+                            'section' => [
+                                'id' => Crypt::encryptString(
+                                    (string) $enrollment->section->id
+                                ),
+                                'name' => $enrollment->section->name,
+                                'schedule' => $enrollment->section->schedule,
+
+                                'subject' => [
+                                    'id' => Crypt::encryptString(
+                                        (string) $enrollment->section->subject->id
+                                    ),
+                                    'code' => $enrollment->section->subject->code,
+                                    'name' => $enrollment->section->subject->name,
+                                ],
+                            ],
+                        ];
+                    }
+                )->values(),
+            ],
         ]);
     }
-
+    
     public function edit(string $id): Response
     {
         $student = $this->resolveStudent($id);

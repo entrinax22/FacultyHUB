@@ -424,7 +424,7 @@ onBeforeUnmount(() => {
                                 <DropdownMenuSeparator />
 
                                 <!-- Profile -->
-                                <DropdownMenuItem as-child>
+                                <!-- <DropdownMenuItem as-child>
                                     <Link
                                         href="/profile"
                                         class="flex cursor-pointer items-center gap-2"
@@ -432,7 +432,7 @@ onBeforeUnmount(() => {
                                         <User class="size-4" />
                                         <span>Profile</span>
                                     </Link>
-                                </DropdownMenuItem>
+                                </DropdownMenuItem> -->
 
                                 <!-- Dashboard -->
                                 <DropdownMenuItem as-child>
