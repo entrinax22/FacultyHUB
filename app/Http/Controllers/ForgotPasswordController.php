@@ -4,57 +4,48 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class ForgotPasswordController extends Controller
 {
     public function verify(Request $request)
     {
         $validated = $request->validate([
-            'email' => [
+            'mode' => ['required', 'in:student_no,email'],
+            'identifier' => [
                 'required',
-                'email',
-            ],
-
-            'student_no' => [
-                'required',
-                'regex:/^\d{4}-\d{5}$/',
+                'string',
+                $request->input('mode') === 'email'
+                    ? 'email'
+                    : 'regex:/^\d{4}-\d{5}$/',
             ],
         ]);
 
-        $user = User::where('email', $validated['email'])
-            ->whereHas('student', function ($query) use ($validated) {
-                $query->where('student_no', $validated['student_no']);
-            })
-            ->first();
+        $user = $validated['mode'] === 'student_no'
+            ? User::whereHas('student', function ($query) use ($validated) {
+                $query->where('student_no', $validated['identifier']);
+            })->first()
+            : User::where('email', $validated['identifier'])->first();
 
         if (!$user) {
             throw ValidationException::withMessages([
-                'email' => 'The email address and student number do not match our records.',
+                'identifier' => 'We could not find an account matching that information.',
             ]);
         }
 
-        // Store only the user ID in the session.
         $request->session()->put('password_reset_user_id', $user->id);
+        $request->session()->put('password_reset_expires_at', now()->addMinutes(10));
 
-        // Expire the authorization after 10 minutes.
-        $request->session()->put(
-            'password_reset_expires_at',
-            now()->addMinutes(10)
-        );
-
-        return back();
+        return back()->with('status', 'Account verified. You can now create a new password.');
     }
 
     public function reset(Request $request)
     {
         $userId = $request->session()->get('password_reset_user_id');
-
         $expiresAt = $request->session()->get('password_reset_expires_at');
 
         if (!$userId || !$expiresAt || now()->greaterThan($expiresAt)) {
-
             $request->session()->forget([
                 'password_reset_user_id',
                 'password_reset_expires_at',
@@ -66,19 +57,13 @@ class ForgotPasswordController extends Controller
         }
 
         $validated = $request->validate([
-            'password' => [
-                'required',
-                'string',
-                'min:8',
-                'confirmed',
-            ],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
         $user = User::find($userId);
 
         if (!$user) {
             throw ValidationException::withMessages([
-                'error',
                 'password' => 'Unable to find your account.',
             ]);
         }
@@ -86,7 +71,6 @@ class ForgotPasswordController extends Controller
         $user->password = Hash::make($validated['password']);
         $user->save();
 
-        // Remove reset authorization.
         $request->session()->forget([
             'password_reset_user_id',
             'password_reset_expires_at',

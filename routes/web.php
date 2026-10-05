@@ -337,6 +337,7 @@ Route::get('/health', function () {
 });
 
 Route::post('/forgot-password/verify', [ForgotPasswordController::class, 'verify'])
+    ->middleware('throttle:6,1')
     ->name('password.verify');
 
 Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'reset'])
