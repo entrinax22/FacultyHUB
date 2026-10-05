@@ -10,6 +10,7 @@ use App\Models\GradingItem;
 use App\Models\GradingItemScore;
 use App\Models\Section;
 use App\Models\TransmutationScale;
+use App\Services\StudentNotificationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -1294,7 +1295,8 @@ class ClassRecordController extends Controller
     */
 
     public function releaseAll(
-        string $sectionId
+        string $sectionId,
+        StudentNotificationService $notifications
     ): JsonResponse {
         $section = $this->resolveSection(
             $sectionId
@@ -1309,7 +1311,7 @@ class ClassRecordController extends Controller
         |
         */
 
-        $assignmentGradesReleased = Grade::query()
+        $assignmentGradeQuery = Grade::query()
             ->where('section_id', $section->id)
             ->whereNotNull('assignment_id')
             ->whereHas(
@@ -1320,10 +1322,16 @@ class ClassRecordController extends Controller
                         $section->id
                     );
                 }
-            )
-            ->update([
-                'is_released' => true,
-            ]);
+            );
+
+        $assignmentStudentIds = (clone $assignmentGradeQuery)
+            ->where('is_released', false)
+            ->distinct()
+            ->pluck('student_id');
+
+        $assignmentGradesReleased = $assignmentGradeQuery
+            ->where('is_released', false)
+            ->update(['is_released' => true]);
 
         /*
         |--------------------------------------------------------------------------
@@ -1342,7 +1350,7 @@ class ClassRecordController extends Controller
         |
         */
 
-        $itemScoresReleased = GradingItemScore::query()
+        $itemScoreQuery = GradingItemScore::query()
             ->where(
                 'section_id',
                 $section->id
@@ -1355,10 +1363,33 @@ class ClassRecordController extends Controller
                         $section->id
                     );
                 }
-            )
-            ->update([
-                'is_released' => true,
-            ]);
+            );
+
+        $itemScoreStudentIds = (clone $itemScoreQuery)
+            ->where('is_released', false)
+            ->distinct()
+            ->pluck('student_id');
+
+        $itemScoresReleased = $itemScoreQuery
+            ->where('is_released', false)
+            ->update(['is_released' => true]);
+
+        $studentIds = $assignmentStudentIds
+            ->merge($itemScoreStudentIds)
+            ->unique()
+            ->values();
+
+        if ($studentIds->isNotEmpty()) {
+            $notifications->notifyStudents(
+                $studentIds,
+                [
+                    'type' => 'grade_release',
+                    'title' => 'Grades released',
+                    'message' => "New grades are available for {$section->name}.",
+                    'url' => '/my-sections/' . $this->encryptId($section->id) . '/grades',
+                ]
+            );
+        }
 
         /*
         |--------------------------------------------------------------------------

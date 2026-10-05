@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Assignment;
 use App\Models\Grade;
 use App\Models\Submission;
+use App\Services\StudentNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -161,7 +163,8 @@ class GradingController extends Controller
     */
 
     public function releaseGrades(
-        Request $request
+        Request $request,
+        StudentNotificationService $notifications
     ): JsonResponse {
         try {
             $validated = $request->validate([
@@ -173,12 +176,29 @@ class GradingController extends Controller
                 $validated['assignment_id']
             );
 
-            $updated = Grade::where(
-                'assignment_id',
-                $assignmentId
-            )->update([
-                'is_released' => true,
-            ]);
+            $assignment = Assignment::findOrFail($assignmentId);
+            $newlyReleasedStudentIds = Grade::query()
+                ->where('assignment_id', $assignmentId)
+                ->where('is_released', false)
+                ->pluck('student_id');
+
+            $updated = Grade::query()
+                ->where('assignment_id', $assignmentId)
+                ->where('is_released', false)
+                ->update(['is_released' => true]);
+
+            if ($updated > 0) {
+                $notifications->notifyStudents(
+                    $newlyReleasedStudentIds,
+                    [
+                        'type' => 'grade_release',
+                        'title' => 'Grades released',
+                        'message' => "Your grade for {$assignment->title} is now available.",
+                        'url' => '/my-sections/' . Crypt::encryptString((string) $assignment->section_id)
+                            . '/assignments',
+                    ]
+                );
+            }
 
             return response()->json([
                 'success' => true,

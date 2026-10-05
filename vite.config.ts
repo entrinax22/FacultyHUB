@@ -28,6 +28,7 @@ export default defineConfig({
             },
         }),
         wayfinder({
+            command: 'node scripts/wayfinder-generate.mjs',
             formVariants: true,
         }),
     ],

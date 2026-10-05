@@ -6,6 +6,7 @@ use App\Concerns\ResolvesStudent;
 use App\Models\Module;
 use App\Models\ModuleFile;
 use App\Models\Section;
+use App\Services\StudentNotificationService;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -343,13 +344,30 @@ class ModuleController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    public function togglePublish(string $id): JsonResponse
+    public function togglePublish(
+        string $id,
+        StudentNotificationService $notifications
+    ): JsonResponse
     {
         $module = $this->resolveModule($id);
+        $wasPublished = $module->is_published;
 
         $module->update([
             'is_published' => ! $module->is_published,
         ]);
+
+        if (! $wasPublished && $module->is_published) {
+            $notifications->notifySectionStudents(
+                (int) $module->section_id,
+                [
+                    'type' => 'module',
+                    'title' => 'New module available',
+                    'message' => "{$module->title} is now available.",
+                    'url' => '/my-sections/' . Crypt::encryptString((string) $module->section_id)
+                        . '/modules/' . Crypt::encryptString((string) $module->id),
+                ]
+            );
+        }
 
         $status = $module->is_published
             ? 'published'

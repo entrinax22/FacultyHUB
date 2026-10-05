@@ -17,6 +17,7 @@ use App\Http\Controllers\SectionController;
 use App\Http\Controllers\SemesterController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentModuleController;
+use App\Http\Controllers\StudentNotificationController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubmissionController;
 use App\Http\Controllers\TransmutationController;
@@ -74,6 +75,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // ─── Faculty & Admin ─────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function () {
+
+    Route::get('staff/notifications', [StudentNotificationController::class, 'index'])->name('staff.notifications.index');
+    Route::post('staff/notifications/read-all', [StudentNotificationController::class, 'markAllRead'])->name('staff.notifications.read-all');
+    Route::post('staff/notifications/{id}/read', [StudentNotificationController::class, 'markRead'])->name('staff.notifications.read');
 
     // Subjects
     Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects');
@@ -260,6 +265,10 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
 
 // ─── Student ──────────────────────────────────────────────────────────────────
 Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
+    Route::get('student/notifications', [StudentNotificationController::class, 'index'])->name('student.notifications.index');
+    Route::post('student/notifications/read-all', [StudentNotificationController::class, 'markAllRead'])->name('student.notifications.read-all');
+    Route::post('student/notifications/{id}/read', [StudentNotificationController::class, 'markRead'])->name('student.notifications.read');
+
     Route::get('my-sections', [StudentModuleController::class, 'dashboard'])->name('student.dashboard');
     Route::get('my-sections/browse', [StudentModuleController::class, 'browseSections'])->name('student.browse');
     Route::post('my-sections/{id}/self-enroll', [StudentModuleController::class, 'selfEnroll'])->name('student.self-enroll');

@@ -11,6 +11,7 @@ use App\Models\Grade;
 use App\Models\Section;
 use App\Models\Student;
 use App\Models\Submission;
+use App\Services\StudentNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -379,7 +380,8 @@ class SubmissionController extends Controller
 
     public function store(
         Request $request,
-        string $assignmentId
+        string $assignmentId,
+        StudentNotificationService $notifications
     ): JsonResponse {
         try {
             $student = $this->resolveStudent($request);
@@ -478,6 +480,12 @@ class SubmissionController extends Controller
             $submission->refresh();
 
             $submission->load('grade');
+
+            $notifications->notifyAssignmentStaff(
+                $assignment,
+                $student,
+                $submission
+            );
 
             return response()->json([
                 'success' => true,

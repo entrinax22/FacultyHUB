@@ -9,6 +9,7 @@ use App\Models\GradingItem;
 use App\Models\Section;
 use App\Models\Module;
 use App\Services\AIGraderService;
+use App\Services\StudentNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -570,11 +571,13 @@ class AssignmentController extends Controller
 
     public function update(
         Request $request,
-        string $id
+        string $id,
+        StudentNotificationService $notifications
     ): JsonResponse {
         $assignment = $this->resolveAssignment($id);
 
         $assignment->load('section');
+        $wasPublished = $assignment->is_published;
 
         $validated = $this->validateAssignment(
             $request,
@@ -604,6 +607,14 @@ class AssignmentController extends Controller
                 $this->syncGradingItem($assignment);
             }
         );
+
+        if ($assignment->is_published) {
+            $this->notifyAssignmentStudents(
+                $assignment,
+                $notifications,
+                $wasPublished
+            );
+        }
 
         $assignment->load([
             'section.subject',
@@ -649,13 +660,25 @@ class AssignmentController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    public function togglePublish(string $id): JsonResponse
+    public function togglePublish(
+        string $id,
+        StudentNotificationService $notifications
+    ): JsonResponse
     {
         $assignment = $this->resolveAssignment($id);
+        $wasPublished = $assignment->is_published;
 
         $assignment->update([
             'is_published' => ! $assignment->is_published,
         ]);
+
+        if (! $wasPublished && $assignment->is_published) {
+            $this->notifyAssignmentStudents(
+                $assignment,
+                $notifications,
+                false
+            );
+        }
 
         return response()->json([
             'success' => true,
@@ -667,6 +690,28 @@ class AssignmentController extends Controller
                     (bool) $assignment->is_published,
             ],
         ]);
+    }
+
+    private function notifyAssignmentStudents(
+        Assignment $assignment,
+        StudentNotificationService $notifications,
+        bool $isUpdate
+    ): void {
+        $assignment->loadMissing('section');
+
+        $notifications->notifySectionStudents(
+            (int) $assignment->section_id,
+            [
+                'type' => 'assignment',
+                'title' => $isUpdate
+                    ? 'Assignment updated'
+                    : 'New assignment posted',
+                'message' => $isUpdate
+                    ? "{$assignment->title} was updated. Review the latest instructions and due date."
+                    : "{$assignment->title} is available in {$assignment->section->name}.",
+                'url' => '/my-sections/' . Crypt::encryptString((string) $assignment->section_id) . '/assignments',
+            ]
+        );
     }
 
     /*

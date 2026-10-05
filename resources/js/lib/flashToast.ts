@@ -3,11 +3,16 @@ import { toast } from 'vue-sonner';
 
 export function initializeFlashToast(): void {
     let submittedMethod: string | null = null;
+    let submittedPath: string | null = null;
 
     router.on('start', (event) => {
         const method = event.detail.visit.method.toUpperCase();
 
         submittedMethod = method === 'GET' ? null : method;
+        submittedPath = new URL(
+            String(event.detail.visit.url),
+            window.location.origin,
+        ).pathname;
     });
 
     router.on('success', (event) => {
@@ -22,6 +27,10 @@ export function initializeFlashToast(): void {
                   warning?: string;
               }
             | undefined;
+        const destinationPath = new URL(
+            event.detail.page.url,
+            window.location.origin,
+        ).pathname;
 
         if (flash?.success) {
             toast.success(flash.success);
@@ -29,11 +38,22 @@ export function initializeFlashToast(): void {
             toast.error(flash.error);
         } else if (flash?.warning) {
             toast.warning(flash.warning);
+        } else if (submittedMethod === 'POST' && submittedPath === '/login') {
+            toast.success(
+                destinationPath.includes('two-factor')
+                    ? 'Complete two-factor authentication to finish signing in.'
+                    : 'Welcome back. You are now signed in.',
+            );
+        } else if (submittedMethod === 'POST' && submittedPath === '/register') {
+            toast.success('Your account has been created successfully.');
+        } else if (submittedMethod === 'POST' && submittedPath === '/logout') {
+            toast.success('You have been signed out.');
         } else {
             toast.success('Changes saved successfully.');
         }
 
         submittedMethod = null;
+        submittedPath = null;
     });
 
     router.on('error', (event) => {
@@ -51,6 +71,7 @@ export function initializeFlashToast(): void {
         );
 
         submittedMethod = null;
+        submittedPath = null;
     });
 }
 
@@ -62,6 +83,7 @@ export function showApiToast(response: any): void {
 
     if (!data) {
         toast.success('Changes saved successfully.');
+
         return;
     }
 
