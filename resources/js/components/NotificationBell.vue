@@ -212,14 +212,14 @@ onBeforeUnmount(() => {
                     :class="notification.read_at
                         ? ''
                         : variant === 'student'
-                            ? 'bg-[#f5f8ed]'
+                            ? 'bg-accent/30'
                             : 'bg-muted/40'"
                     @click="openNotification(notification)"
                 >
                     <span
                         class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg"
                         :class="variant === 'student'
-                            ? 'bg-[#e5eee5] text-[#35715a]'
+                            ? 'bg-primary/10 text-primary'
                             : 'bg-primary/10 text-primary'"
                     >
                         <component
@@ -243,7 +243,7 @@ onBeforeUnmount(() => {
                     <span
                         v-if="!notification.read_at"
                         class="mt-1.5 size-2 shrink-0 rounded-full"
-                        :class="variant === 'student' ? 'bg-[#35715a]' : 'bg-primary'"
+                        :class="variant === 'student' ? 'bg-primary' : 'bg-primary'"
                     />
                 </button>
             </div>

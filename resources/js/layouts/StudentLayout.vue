@@ -43,8 +43,8 @@ const inBrowse = computed(() =>
 </script>
 
 <template>
-    <div class="min-h-screen bg-[#f3f6f2] text-[#182b25]">
-        <header class="bg-[#153d34] text-white">
+    <div class="min-h-screen bg-background text-foreground">
+        <header class="bg-[#153d34] text-white dark:bg-[#102b23]">
             <div
                 class="mx-auto flex h-[72px] max-w-screen-2xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
             >
@@ -100,7 +100,7 @@ const inBrowse = computed(() =>
         </header>
 
         <nav
-            class="border-b border-[#dce5de] bg-white"
+            class="border-b border-border bg-card"
             aria-label="Student navigation"
         >
             <div
@@ -111,8 +111,8 @@ const inBrowse = computed(() =>
                     class="inline-flex min-h-12 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors"
                     :class="
                         inMyClasses
-                            ? 'border-[#35715a] text-[#245641]'
-                            : 'border-transparent text-[#66766d] hover:text-[#182b25]'
+                            ? 'border-primary text-foreground'
+                            : 'border-transparent text-muted-foreground hover:text-foreground'
                     "
                     :aria-current="inMyClasses ? 'page' : undefined"
                 >
@@ -124,8 +124,8 @@ const inBrowse = computed(() =>
                     class="inline-flex min-h-12 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors"
                     :class="
                         inBrowse
-                            ? 'border-[#35715a] text-[#245641]'
-                            : 'border-transparent text-[#66766d] hover:text-[#182b25]'
+                            ? 'border-primary text-foreground'
+                            : 'border-transparent text-muted-foreground hover:text-foreground'
                     "
                     :aria-current="inBrowse ? 'page' : undefined"
                 >
@@ -144,7 +144,7 @@ const inBrowse = computed(() =>
                 aria-label="Breadcrumb"
             >
                 <ol
-                    class="flex flex-wrap items-center gap-1.5 text-xs text-[#748078]"
+                    class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
                 >
                     <li
                         v-for="(breadcrumb, index) in breadcrumbs"
@@ -161,7 +161,7 @@ const inBrowse = computed(() =>
                         <Link
                             v-else
                             :href="breadcrumb.href"
-                            class="transition-colors hover:text-[#245641]"
+                            class="transition-colors hover:text-foreground"
                         >
                             {{ breadcrumb.title }}
                         </Link>
