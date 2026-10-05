@@ -52,16 +52,23 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        DB::transaction(function () use ($user){
-            $user->student?->delete();
+        DB::transaction(function () use ($user) {
+            Student::query()
+                ->where('user_id', $user->id)
+                ->orWhere(function ($query) use ($user) {
+                    $query
+                        ->whereNull('user_id')
+                        ->where('email', $user->email);
+                })
+                ->delete();
 
             Auth::logout();
 
             $user->delete();
         });
 
-        $request->session()->invalidate(); 
-        $request->session()->regenerateToken(); 
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
         
         return redirect('/');
     }
