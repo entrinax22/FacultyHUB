@@ -322,36 +322,33 @@ class SectionController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where(
-                        'sections.name',
-                        'like',
-                        "%{$search}%"
+            if ($search = trim((string) $request->get('search', ''))) {
+                $search = mb_strtolower($search);
+                $searchPattern = "%{$search}%";
+
+                $query->where(function ($q) use ($searchPattern) {
+                    $q->whereRaw(
+                        'LOWER(sections.name) LIKE ?',
+                        [$searchPattern]
                     )
                         ->orWhereHas(
                             'subject',
-                            function ($subject) use ($search) {
-                                $subject
-                                    ->where(
-                                        'name',
-                                        'like',
-                                        "%{$search}%"
-                                    )
-                                    ->orWhere(
-                                        'code',
-                                        'like',
-                                        "%{$search}%"
-                                    );
+                            function ($subject) use ($searchPattern) {
+                                $subject->whereRaw(
+                                    'LOWER(name) LIKE ?',
+                                    [$searchPattern]
+                                )->orWhereRaw(
+                                    'LOWER(code) LIKE ?',
+                                    [$searchPattern]
+                                );
                             }
                         )
                         ->orWhereHas(
                             'faculty',
-                            function ($faculty) use ($search) {
-                                $faculty->where(
-                                    'name',
-                                    'like',
-                                    "%{$search}%"
+                            function ($faculty) use ($searchPattern) {
+                                $faculty->whereRaw(
+                                    'LOWER(name) LIKE ?',
+                                    [$searchPattern]
                                 );
                             }
                         );
