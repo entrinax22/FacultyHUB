@@ -24,8 +24,8 @@ type SectionItem = {
     id: string;
     name: string;
     schedule: string | null;
-    subject_code: string;
-    subject_name: string;
+    subject_code: string | null;
+    subject_name: string | null;
     faculty_name: string;
     semester: string;
     enrollments_count: number;
@@ -100,10 +100,10 @@ const filtered = computed(() => {
 
     return sections.value.filter(
         (section) =>
-            section.subject_code
+            (section.subject_code ?? '')
                 .toLowerCase()
                 .includes(q) ||
-            section.subject_name
+            (section.subject_name ?? '')
                 .toLowerCase()
                 .includes(q) ||
             section.name
@@ -194,7 +194,7 @@ async function enroll(sectionId: string) {
 
             <Input
                 v-model="search"
-                placeholder="Search by subject, section, or faculty…"
+                placeholder="Search subject code or name, section, or faculty…"
                 class="w-full pl-9"
             />
         </div>

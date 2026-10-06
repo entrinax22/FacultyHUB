@@ -126,6 +126,28 @@ const props = defineProps<{
     assignment?: Assignment;
 }>();
 
+function toLocalDateTimeInput(value: string | null | undefined): string {
+    if (!value) {
+        return '';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    return new Date(
+        date.getTime() - date.getTimezoneOffset() * 60_000,
+    )
+        .toISOString()
+        .slice(0, 16);
+}
+
+function toUtcDateTime(value: string): string {
+    return value ? new Date(value).toISOString() : '';
+}
+
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -142,13 +164,15 @@ const form = ref<AssignmentForm>({
     period: props.assignment?.period ?? 'none',
     category: props.assignment?.category ?? 'none',
     component_id: props.assignment?.component_id ?? 'none',
-    due_date: props.assignment?.due_date?.slice(0, 16) ?? '',
+    due_date: toLocalDateTimeInput(props.assignment?.due_date),
     max_score: props.assignment?.max_score ?? 100,
     passing_score: props.assignment?.passing_score ?? '',
     is_published: props.assignment?.is_published ?? false,
     rubric: props.assignment?.rubric ?? '',
     language: props.assignment?.language ?? 'python',
-    answer_release_at: props.assignment?.answer_release_at?.slice(0, 16) ?? '',
+    answer_release_at: toLocalDateTimeInput(
+        props.assignment?.answer_release_at,
+    ),
     module_id: props.assignment?.module_id ?? 'none',
     duration_minutes: props.assignment?.duration_minutes ?? '',
     proctoring_enabled: props.assignment?.proctoring_enabled ?? false,
@@ -289,6 +313,12 @@ function setCorrect(questionIndex: number, choiceIndex: number) {
 function preparePayload(): AssignmentForm {
     return {
         ...form.value,
+
+        due_date: toUtcDateTime(form.value.due_date),
+
+        answer_release_at: toUtcDateTime(
+            form.value.answer_release_at,
+        ),
 
         period: form.value.period === 'none' ? '' : form.value.period,
 

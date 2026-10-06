@@ -601,7 +601,7 @@ onMounted(() => {
                 <input
                     v-model="search"
                     type="text"
-                    placeholder="Search sections, subjects, or faculty..."
+                    placeholder="Search section, subject code or name, or faculty..."
                     class="h-10 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm transition outline-none focus:ring-1 focus:ring-ring"
                 />
             </div>
