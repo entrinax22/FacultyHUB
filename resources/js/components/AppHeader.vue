@@ -147,7 +147,7 @@ const rightNavItems: NavItem[] = [
                 </div>
 
                 <Link :href="dashboard()" class="flex items-center gap-x-2">
-                    <AppLogo />
+                    <AppLogo variant="light" />
                 </Link>
 
                 <!-- Desktop Menu -->

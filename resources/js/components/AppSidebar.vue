@@ -68,7 +68,11 @@ const mainNavItems = computed<NavItem[]>(() => {
         <SidebarHeader>
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton size="lg" as-child>
+                    <SidebarMenuButton
+                        size="lg"
+                        as-child
+                        class="bg-transparent p-0 shadow-none hover:bg-transparent hover:shadow-none group-data-[collapsible=icon]:p-0!"
+                    >
                         <Link href="/dashboard">
                             <AppLogo />
                         </Link>

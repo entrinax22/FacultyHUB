@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BrandLogo from '@/components/BrandLogo.vue';
+
 defineProps<{
     title?: string;
     description?: string;
@@ -14,86 +16,9 @@ defineProps<{
         >
             <!-- Brand -->
             <div class="flex items-center justify-center py-1">
-                <div class="flex items-center gap-2.5">
-                    <div
-                        class="flex aspect-square size-9 items-center justify-center rounded-xl brand-gradient shadow-md sm:size-10 lg:size-11"
-                    >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            class="size-5 sm:size-5.5 lg:size-6"
-                        >
-                            <circle
-                                cx="12"
-                                cy="12"
-                                r="2.5"
-                                fill="hsl(142 30% 12%)"
-                            />
-                            <circle
-                                cx="5"
-                                cy="7"
-                                r="1.8"
-                                fill="hsl(142 30% 12%)"
-                            />
-                            <circle
-                                cx="19"
-                                cy="7"
-                                r="1.8"
-                                fill="hsl(142 30% 12%)"
-                            />
-                            <circle
-                                cx="5"
-                                cy="17"
-                                r="1.8"
-                                fill="hsl(142 30% 12%)"
-                            />
-                            <circle
-                                cx="19"
-                                cy="17"
-                                r="1.8"
-                                fill="hsl(142 30% 12%)"
-                            />
-                            <line
-                                x1="12"
-                                y1="12"
-                                x2="5"
-                                y2="7"
-                                stroke="hsl(142 30% 12%)"
-                                stroke-width="1.3"
-                            />
-                            <line
-                                x1="12"
-                                y1="12"
-                                x2="19"
-                                y2="7"
-                                stroke="hsl(142 30% 12%)"
-                                stroke-width="1.3"
-                            />
-                            <line
-                                x1="12"
-                                y1="12"
-                                x2="5"
-                                y2="17"
-                                stroke="hsl(142 30% 12%)"
-                                stroke-width="1.3"
-                            />
-                            <line
-                                x1="12"
-                                y1="12"
-                                x2="19"
-                                y2="17"
-                                stroke="hsl(142 30% 12%)"
-                                stroke-width="1.3"
-                            />
-                        </svg>
-                    </div>
-
-                    <span
-                        class="text-lg font-bold tracking-tight sm:text-xl lg:text-2xl"
-                    >
-                        Faculty<span class="brand-gradient-text">HUB</span>
-                    </span>
-                </div>
+            <BrandLogo
+                class-name="h-auto w-44 sm:w-52 lg:w-60"
+            />
             </div>
 
             <!-- Single Auth Card -->

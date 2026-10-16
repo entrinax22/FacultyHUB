@@ -213,11 +213,11 @@ onBeforeUnmount(() => {
 
 <template>
     <Head>
-        <title>FacultyLMS — Learning Management for Faculty & Students</title>
+        <title>FacultyHUB LMS — Learning Management for Faculty & Students</title>
 
         <meta
             name="description"
-            content="FacultyLMS is a learning management system that connects faculty and students through course materials, assignments, quizzes, attendance, grading, feedback, and academic progress."
+            content="FacultyHUB LMS is a learning management system that connects faculty and students through course materials, assignments, quizzes, attendance, grading, feedback, and academic progress."
         />
 
         <meta name="robots" content="index, follow" />
@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
 
         <meta
             property="og:title"
-            content="FacultyLMS — Learning Management for Faculty & Students"
+            content="FacultyHUB LMS — Learning Management for Faculty & Students"
         />
 
         <meta
@@ -239,14 +239,14 @@ onBeforeUnmount(() => {
 
         <meta property="og:url" content="https://www.faculty-lms.online/" />
 
-        <meta property="og:site_name" content="FacultyLMS" />
+        <meta property="og:site_name" content="FacultyHUB LMS" />
 
         <!-- Twitter / X -->
         <meta name="twitter:card" content="summary" />
 
         <meta
             name="twitter:title"
-            content="FacultyLMS — Learning Management for Faculty & Students"
+            content="FacultyHUB LMS — Learning Management for Faculty & Students"
         />
 
         <meta
@@ -273,12 +273,12 @@ onBeforeUnmount(() => {
                     class="group flex min-w-0 shrink-0 items-center gap-2.5"
                 >
                     <div
-                        class="brand-gradient flex size-9 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:rotate-3"
+                        class="flex shrink-0 items-center transition-transform duration-300 group-hover:scale-105"
                     >
                         <svg
                             viewBox="0 0 24 24"
                             fill="none"
-                            class="size-5 transition-transform duration-300 group-hover:scale-110"
+                            class="hidden size-5 transition-transform duration-300 group-hover:scale-110"
                         >
                             <circle
                                 cx="12"
@@ -351,13 +351,18 @@ onBeforeUnmount(() => {
                                 stroke-width="1.3"
                             />
                         </svg>
+                        <img
+                            src="/FacultyHUB-LMS%20Logo/facultyhub-horizontal-light.svg"
+                            alt="FacultyHUB LMS"
+                            class="h-10 w-40 object-contain object-left transition-transform duration-300 group-hover:scale-105 dark:hidden"
+                        />
+                        <img
+                            src="/FacultyHUB-LMS%20Logo/facultyhub-horizontal-dark.svg"
+                            alt="FacultyHUB LMS"
+                            class="hidden h-10 w-40 object-contain object-left transition-transform duration-300 group-hover:scale-105 dark:block"
+                        />
                     </div>
 
-                    <span
-                        class="truncate text-base font-bold tracking-tight sm:text-lg"
-                    >
-                        Faculty<span class="brand-gradient-text">LMS</span>
-                    </span>
                 </Link>
 
                 <!-- Navigation -->
@@ -591,7 +596,7 @@ onBeforeUnmount(() => {
                         class="fade-up mx-auto mt-6 max-w-2xl text-sm leading-6 text-muted-foreground sm:mt-7 sm:text-lg sm:leading-7"
                         style="animation-delay: 200ms"
                     >
-                        FacultyLMS connects faculty and students in one
+                        FacultyHUB LMS connects faculty and students in one
                         streamlined learning environment — from course materials
                         and assessments to attendance, grading, feedback, and
                         academic progress.
@@ -731,7 +736,7 @@ onBeforeUnmount(() => {
                         <p
                             class="mt-4 text-sm leading-6 text-muted-foreground sm:text-base"
                         >
-                            FacultyLMS gives faculty the tools to manage their
+                            FacultyHUB LMS gives faculty the tools to manage their
                             classes and gives students a simple place to learn,
                             submit work, and track their academic progress.
                         </p>
@@ -955,7 +960,7 @@ onBeforeUnmount(() => {
                         class="mx-auto mt-3 max-w-xl text-sm leading-6"
                         style="color: hsl(142 25% 28%)"
                     >
-                        FacultyLMS brings teaching, learning, assessments,
+                        FacultyHUB LMS brings teaching, learning, assessments,
                         attendance, grading, feedback, and academic progress
                         together in one place.
                     </p>
@@ -971,7 +976,7 @@ onBeforeUnmount(() => {
                             as-child
                         >
                             <Link :href="login()">
-                                Log in to FacultyLMS
+                                Log in to FacultyHUB LMS
 
                                 <ArrowRight
                                     class="ml-2 size-4 transition-transform duration-300"
@@ -1008,7 +1013,7 @@ onBeforeUnmount(() => {
                 class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-center text-xs text-muted-foreground sm:flex-row sm:px-6 sm:text-left lg:px-8"
             >
                 <p>
-                    FacultyLMS © {{ new Date().getFullYear() }}
+                    FacultyHUB LMS © {{ new Date().getFullYear() }}
                     · Teaching & Learning Platform
                 </p>
 

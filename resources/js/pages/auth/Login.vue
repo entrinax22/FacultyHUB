@@ -42,23 +42,23 @@ defineProps<{
                          BRANDING PANEL
                     ================================================== -->
                     <section
-                        class="brand-gradient relative hidden min-h-[650px] overflow-hidden lg:flex"
+                        class="relative hidden min-h-[650px] overflow-hidden bg-gradient-to-br from-[#88af91] to-[#cee2b1] lg:flex dark:from-[#15281c] dark:to-[#1e2922]"
                     >
                         <!-- Decorative shapes -->
                         <div
-                            class="absolute -right-32 -top-32 size-96 rounded-full bg-white/10 blur-3xl"
+                            class="absolute -right-32 -top-32 size-96 rounded-full bg-[#15281c]/10 blur-3xl dark:bg-white/5"
                         />
 
                         <div
-                            class="absolute -bottom-40 -left-32 size-[28rem] rounded-full bg-black/10 blur-3xl"
+                            class="absolute -bottom-40 -left-32 size-[28rem] rounded-full bg-[#cee2b1]/25 blur-3xl dark:bg-black/20"
                         />
 
                         <div
-                            class="absolute right-12 top-1/2 size-44 -translate-y-1/2 rounded-full border border-white/10"
+                            class="absolute right-12 top-1/2 size-44 -translate-y-1/2 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
                         />
 
                         <div
-                            class="absolute bottom-28 right-28 size-20 rounded-full border border-white/10"
+                            class="absolute bottom-28 right-28 size-20 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
                         />
 
                         <!-- Branding content -->
@@ -70,13 +70,11 @@ defineProps<{
                                 :href="home()"
                                 class="group flex w-fit items-center gap-3"
                             >
-                                <div
-                                    class="flex size-12 items-center justify-center rounded-2xl bg-white shadow-lg transition-transform duration-200 group-hover:scale-105"
-                                >
+                                <div class="flex items-center">
                                     <svg
                                         viewBox="0 0 24 24"
                                         fill="none"
-                                        class="size-7"
+                                        class="hidden size-7"
                                     >
                                         <circle
                                             cx="12"
@@ -149,9 +147,19 @@ defineProps<{
                                             stroke-width="1.3"
                                         />
                                     </svg>
+                                    <img
+                                        src="/FacultyHUB-LMS%20Logo/facultyhub-horizontal-light.svg"
+                                        alt="FacultyHUB LMS"
+                                        class="h-auto w-56 object-contain object-left dark:hidden"
+                                    />
+                                    <img
+                                        src="/FacultyHUB-LMS%20Logo/facultyhub-horizontal-dark.svg"
+                                        alt="FacultyHUB LMS"
+                                        class="hidden h-auto w-56 object-contain object-left dark:block"
+                                    />
                                 </div>
 
-                                <div>
+                                <div class="hidden">
                                     <div
                                         class="text-xl font-bold tracking-tight text-white"
                                     >
@@ -171,13 +179,13 @@ defineProps<{
                             <!-- Main message -->
                             <div class="max-w-md">
                                 <p
-                                    class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-white/50"
+                                    class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#15281c]/70 dark:text-[#cee2b1]/70"
                                 >
                                     Welcome back
                                 </p>
 
                                 <h1
-                                    class="text-4xl font-bold leading-[1.05] tracking-tight text-white xl:text-5xl"
+                                    class="text-4xl font-bold leading-[1.05] tracking-tight text-[#15281c] xl:text-5xl dark:text-[#cee2b1]"
                                 >
                                     Your learning,
                                     <br />
@@ -185,7 +193,7 @@ defineProps<{
                                 </h1>
 
                                 <p
-                                    class="mt-6 max-w-sm text-sm leading-6 text-white/70"
+                                    class="mt-6 max-w-sm text-sm leading-6 text-[#1e2922]/75 dark:text-white/70"
                                 >
                                     Access your classes, assignments, grades,
                                     attendance, and other academic resources
@@ -194,7 +202,7 @@ defineProps<{
                             </div>
 
                             <!-- Footer -->
-                            <p class="text-xs text-white/40">
+                            <p class="text-xs text-[#1e2922]/60 dark:text-[#cee2b1]/60">
                                 FacultyHUB Student Portal
                             </p>
                         </div>
@@ -212,13 +220,11 @@ defineProps<{
                                 :href="home()"
                                 class="mb-10 flex w-fit items-center gap-2.5 lg:hidden"
                             >
-                                <div
-                                    class="flex size-10 items-center justify-center rounded-xl brand-gradient shadow-md"
-                                >
+                                <div class="flex items-center">
                                     <svg
                                         viewBox="0 0 24 24"
                                         fill="none"
-                                        class="size-5"
+                                        class="hidden size-5"
                                     >
                                         <circle
                                             cx="12"
@@ -284,15 +290,13 @@ defineProps<{
                                             stroke-width="1.3"
                                         />
                                     </svg>
+                                    <img
+                                        src="/FacultyHUB-LMS%20Logo/facultyhub-horizontal-light.svg"
+                                        alt="FacultyHUB LMS"
+                                        class="h-auto w-44 object-contain object-left"
+                                    />
                                 </div>
 
-                                <span
-                                    class="text-lg font-bold tracking-tight"
-                                >
-                                    Faculty<span class="brand-gradient-text">
-                                        HUB
-                                    </span>
-                                </span>
                             </Link>
 
                             <!-- Heading -->

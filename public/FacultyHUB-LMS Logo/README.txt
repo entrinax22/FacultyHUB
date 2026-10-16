@@ -1,0 +1,1 @@
+FacultyHUB branding v2. SVG and PNG assets. All horizontal and standalone mark images have transparent backgrounds. favicon-*.png and favicon.ico are transparent. App icons intentionally use #15281c background. Suggested: horizontal-dark for dark sidebar, horizontal-light for light pages, favicon.ico for browser tab, app-icon-180 for apple-touch-icon.
