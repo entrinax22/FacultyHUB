@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
 import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search, Bot, Home} from 'lucide-vue-next';
+import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -14,7 +15,6 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import type { NavItem } from '@/types';
-import { computed } from 'vue';
 
 const page = usePage();
 const role = computed(() => (page.props.auth as any).role as string | undefined);
@@ -50,12 +50,15 @@ const mainNavItems = computed<NavItem[]>(() => {
     if (role.value === 'admin') {
         return adminNavItems;
     }
+
     if (role.value === 'faculty') {
         return [...commonNavItems, ...facultyNavItems];
     }
+
     if (role.value === 'student') {
         return [...commonNavItems, ...studentNavItems];
     }
+
     return commonNavItems;
 });
 </script>

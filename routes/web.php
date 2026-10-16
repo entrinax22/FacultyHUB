@@ -1,13 +1,13 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AiGradingController;
 use App\Http\Controllers\AiSettingsController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AttendanceRecordController;
 use App\Http\Controllers\AttendanceSessionController;
 use App\Http\Controllers\ClassRecordController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\GradingComponentController;
 use App\Http\Controllers\GradingController;
 use App\Http\Controllers\GradingItemController;
@@ -37,32 +37,32 @@ Route::inertia('/', 'Welcome', [
 Route::get('/robots.txt', function () {
     return response(
         "User-agent: *\n"
-        . "Disallow: /admin/\n"
-        . "Disallow: /dashboard\n"
-        . "Disallow: /my-sections/\n"
-        . "Disallow: /subjects/\n"
-        . "Disallow: /sections/\n"
-        . "Disallow: /students/\n"
-        . "Disallow: /assignments/\n"
-        . "Disallow: /submissions/\n"
-        . "Disallow: /grades/\n"
-        . "Disallow: /attendance/\n"
-        . "Disallow: /modules/\n"
-        . "Disallow: /forgot-password/\n"
-        . "Sitemap: " . url('/sitemap.xml') . "\n",
+        ."Disallow: /admin/\n"
+        ."Disallow: /dashboard\n"
+        ."Disallow: /my-sections/\n"
+        ."Disallow: /subjects/\n"
+        ."Disallow: /sections/\n"
+        ."Disallow: /students/\n"
+        ."Disallow: /assignments/\n"
+        ."Disallow: /submissions/\n"
+        ."Disallow: /grades/\n"
+        ."Disallow: /attendance/\n"
+        ."Disallow: /modules/\n"
+        ."Disallow: /forgot-password/\n"
+        .'Sitemap: '.url('/sitemap.xml')."\n",
         200
     )->header('Content-Type', 'text/plain');
 })->name('robots');
 
 Route::get('/sitemap.xml', function () {
     $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-        . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        . '<url>'
-        . '<loc>' . url('/') . '</loc>'
-        . '<changefreq>weekly</changefreq>'
-        . '<priority>1.0</priority>'
-        . '</url>'
-        . '</urlset>';
+        .'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        .'<url>'
+        .'<loc>'.url('/').'</loc>'
+        .'<changefreq>weekly</changefreq>'
+        .'<priority>1.0</priority>'
+        .'</url>'
+        .'</urlset>';
 
     return response($xml, 200)
         ->header('Content-Type', 'application/xml');
@@ -70,11 +70,11 @@ Route::get('/sitemap.xml', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
-    Route::get('module-files/{id}/serve',[ModuleController::class, 'serveFile'])->name('modules.files.serve');
+    Route::get('module-files/{id}/serve', [ModuleController::class, 'serveFile'])->name('modules.files.serve');
 });
 
 // ─── Faculty & Admin ─────────────────────────────────────────────────────────
-Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function () {
+Route::middleware(['auth', 'verified', 'role:faculty,admin', 'faculty.resource'])->group(function () {
 
     Route::get('staff/notifications', [StudentNotificationController::class, 'index'])->name('staff.notifications.index');
     Route::post('staff/notifications/read-all', [StudentNotificationController::class, 'markAllRead'])->name('staff.notifications.read-all');
@@ -101,32 +101,31 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
     Route::put('/sections/update/{id}', [SectionController::class, 'update'])->name('sections.update');
     Route::delete('/sections/delete/{id}', [SectionController::class, 'destroy'])->name('sections.destroy');
 
-    //Enrollment
-    Route::get( 'sections/{id}/students/search', [StudentController::class, 'search'] )->name('sections.students.search');
-    Route::post( 'sections/{id}/enroll', [StudentController::class, 'enroll'] )->name('sections.enroll');
-    Route::post( 'sections/{id}/bulk-enroll', [StudentController::class, 'bulkEnroll'] )->name('sections.bulk-enroll');
+    // Enrollment
+    Route::get('sections/{id}/students/search', [StudentController::class, 'search'])->name('sections.students.search');
+    Route::post('sections/{id}/enroll', [StudentController::class, 'enroll'])->name('sections.enroll');
+    Route::post('sections/{id}/bulk-enroll', [StudentController::class, 'bulkEnroll'])->name('sections.bulk-enroll');
 
-    //Module
-    Route::get('sections/{sectionId}/modules',[ModuleController::class, 'index'])->name('sections.modules.index');
-    Route::get('sections/{sectionId}/modules/create',[ModuleController::class, 'create'])->name('sections.modules.create');
-    Route::post('sections/{sectionId}/modules',[ModuleController::class, 'store'])->middleware('throttle:uploads')->name('sections.modules.store');
-    Route::post('sections/{sectionId}/modules/reorder',[ModuleController::class, 'reorder'])->name('sections.modules.reorder');
-    Route::get('modules/{id}',[ModuleController::class, 'show'])->name('modules.show');
-    Route::get('modules/{id}/edit',[ModuleController::class, 'edit'])->name('modules.edit');
-    Route::put('modules/{id}',[ModuleController::class, 'update'])->middleware('throttle:uploads')->name('modules.update');
-    Route::delete('modules/{id}',[ModuleController::class, 'destroy'])->name('modules.destroy');
-    Route::post('modules/{id}/toggle-publish',[ModuleController::class, 'togglePublish'])->name('modules.toggle-publish');
-    Route::delete('module-files/{id}',[ModuleController::class, 'destroyFile'])->name('module-files.destroy');
-    
-    
+    // Module
+    Route::get('sections/{sectionId}/modules', [ModuleController::class, 'index'])->name('sections.modules.index');
+    Route::get('sections/{sectionId}/modules/create', [ModuleController::class, 'create'])->name('sections.modules.create');
+    Route::post('sections/{sectionId}/modules', [ModuleController::class, 'store'])->middleware('throttle:uploads')->name('sections.modules.store');
+    Route::post('sections/{sectionId}/modules/reorder', [ModuleController::class, 'reorder'])->name('sections.modules.reorder');
+    Route::get('modules/{id}', [ModuleController::class, 'show'])->name('modules.show');
+    Route::get('modules/{id}/edit', [ModuleController::class, 'edit'])->name('modules.edit');
+    Route::put('modules/{id}', [ModuleController::class, 'update'])->middleware('throttle:uploads')->name('modules.update');
+    Route::delete('modules/{id}', [ModuleController::class, 'destroy'])->name('modules.destroy');
+    Route::post('modules/{id}/toggle-publish', [ModuleController::class, 'togglePublish'])->name('modules.toggle-publish');
+    Route::delete('module-files/{id}', [ModuleController::class, 'destroyFile'])->name('module-files.destroy');
+
     // Assignments
-    Route::get('sections/{sectionId}/assignments',[AssignmentController::class, 'index'])->name('sections.assignments.index');
-    Route::get('sections/{sectionId}/assignments/data',[AssignmentController::class, 'data'])->name('sections.assignments.data');
+    Route::get('sections/{sectionId}/assignments', [AssignmentController::class, 'index'])->name('sections.assignments.index');
+    Route::get('sections/{sectionId}/assignments/data', [AssignmentController::class, 'data'])->name('sections.assignments.data');
     Route::get('sections/{sectionId}/assignments/create', [AssignmentController::class, 'create'])->name('sections.assignments.create');
     Route::post('sections/{sectionId}/assignments/import-pdf', [AssignmentController::class, 'importPdf'])->middleware('throttle:uploads')->name('sections.assignments.import-pdf');
     Route::post('sections/{sectionId}/assignments', [AssignmentController::class, 'store'])->name('sections.assignments.store');
     Route::get('assignments/{id}', [AssignmentController::class, 'show'])->name('assignments.show');
-    Route::get('assignments/{id}/submissions/data',[AssignmentController::class, 'submissionsData'])->name('assignments.submissions.data');
+    Route::get('assignments/{id}/submissions/data', [AssignmentController::class, 'submissionsData'])->name('assignments.submissions.data');
     Route::get('assignments/{id}/edit', [AssignmentController::class, 'edit'])->name('assignments.edit');
     Route::put('assignments/{id}', [AssignmentController::class, 'update'])->name('assignments.update');
     Route::delete('assignments/{id}', [AssignmentController::class, 'destroy'])->name('assignments.destroy');
@@ -137,11 +136,21 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
     Route::get('submissions/{id}/grade/data', [GradingController::class, 'data'])->name('submissions.grade.data');
     Route::post('submissions/{id}/approve', [GradingController::class, 'approve'])->name('submissions.approve');
     Route::post('grades/release', [GradingController::class, 'releaseGrades'])->name('grades.release');
+    Route::post('assignments/{assignmentId}/ai-grading/start', [AiGradingController::class, 'start'])->middleware('admin.2fa')->name('assignments.ai-grading.start');
+    Route::get('assignments/{assignmentId}/ai-grading/status', [AiGradingController::class, 'status'])->middleware('admin.2fa')->name('assignments.ai-grading.status');
+    Route::post('assignments/{assignmentId}/ai-grading/next', [AiGradingController::class, 'process'])->middleware(['admin.2fa', 'throttle:ai'])->name('assignments.ai-grading.next');
+    Route::post('assignments/{assignmentId}/ai-grading/retry', [AiGradingController::class, 'retry'])->middleware(['admin.2fa', 'throttle:ai'])->name('assignments.ai-grading.retry');
+    Route::post('assignments/{assignmentId}/ai-grading/cancel', [AiGradingController::class, 'cancel'])->middleware('admin.2fa')->name('assignments.ai-grading.cancel');
 
     // Plagiarism
     Route::get('assignments/{assignmentId}/plagiarism', [PlagiarismController::class, 'show'])->name('assignments.plagiarism');
     Route::get('assignments/{assignmentId}/plagiarism/data', [PlagiarismController::class, 'data'])->name('assignments.plagiarism.data');
-    Route::post('assignments/{assignmentId}/plagiarism/run', [PlagiarismController::class, 'run'])->middleware('throttle:ai')->name('assignments.plagiarism.run');
+    Route::post('assignments/{assignmentId}/plagiarism/processing/start', [PlagiarismController::class, 'start'])->name('assignments.plagiarism.processing.start');
+    Route::get('assignments/{assignmentId}/plagiarism/processing/status', [PlagiarismController::class, 'status'])->name('assignments.plagiarism.processing.status');
+    Route::post('assignments/{assignmentId}/plagiarism/processing/next', [PlagiarismController::class, 'process'])->middleware('throttle:ai')->name('assignments.plagiarism.processing.next');
+    Route::post('assignments/{assignmentId}/plagiarism/processing/retry', [PlagiarismController::class, 'retry'])->middleware('throttle:ai')->name('assignments.plagiarism.processing.retry');
+    Route::post('assignments/{assignmentId}/plagiarism/processing/cancel', [PlagiarismController::class, 'cancel'])->name('assignments.plagiarism.processing.cancel');
+    Route::post('assignments/{assignmentId}/plagiarism/processing/publish', [PlagiarismController::class, 'publish'])->name('assignments.plagiarism.processing.publish');
 
     // Students
     Route::get('/students', [StudentController::class, 'index'])->name('students.index');
@@ -156,11 +165,11 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin'])->group(function ()
     Route::delete('enrollments/{id}', [StudentController::class, 'unenroll'])->name('enrollments.destroy');
 
     // Class Record
-    Route::get('sections/{sectionId}/class-record',[ClassRecordController::class, 'page'])->name('sections.class-record');
-    Route::get('sections/{sectionId}/class-record/data',[ClassRecordController::class, 'show'])->name('sections.class-record.data');
-    Route::put('class-record/grades',[ClassRecordController::class, 'updateGrade'])->name('class-record.grades.update');
-    Route::put('class-record/item-scores',[ClassRecordController::class, 'updateItemScore'])->name('class-record.item-scores.update');
-    Route::post('sections/{sectionId}/class-record/release-all',[ClassRecordController::class, 'releaseAll'])->name('sections.class-record.release-all');
+    Route::get('sections/{sectionId}/class-record', [ClassRecordController::class, 'page'])->name('sections.class-record');
+    Route::get('sections/{sectionId}/class-record/data', [ClassRecordController::class, 'show'])->name('sections.class-record.data');
+    Route::put('class-record/grades', [ClassRecordController::class, 'updateGrade'])->name('class-record.grades.update');
+    Route::put('class-record/item-scores', [ClassRecordController::class, 'updateItemScore'])->name('class-record.item-scores.update');
+    Route::post('sections/{sectionId}/class-record/release-all', [ClassRecordController::class, 'releaseAll'])->name('sections.class-record.release-all');
     Route::get(
         'sections/{sectionId}/class-record/pdf',
         [ClassRecordController::class, 'exportPdf']
@@ -286,14 +295,14 @@ Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
 });
 
 // ─── Admin Only ───────────────────────────────────────────────────────────────
-Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'verified', 'role:admin', 'admin.2fa'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
     Route::get('/dashboard/data', [AdminController::class, 'dashboardData'])->name('dashboard.data');
 
     Route::get('/users', [AdminController::class, 'index'])->name('users');
     Route::get('/users/data', [AdminController::class, 'users'])->name('users.list');
     Route::put('/users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
-    
+
     Route::get('reports', [AdminController::class, 'reports_index'])->name('reports');
     Route::get('reports/data', [AdminController::class, 'reports'])->name('reports.data');
 
@@ -314,7 +323,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 
     Route::post('ai-settings/providers/{id}/check', [AiSettingsController::class, 'checkProvider'])
         ->name('ai-settings.providers.check');
-        
+
     // Semesters — admin only
     Route::get('/semesters', [SemesterController::class, 'index'])
         ->name('semesters.index');
@@ -339,17 +348,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 
     Route::put('/semesters/set-active/{id}', [SemesterController::class, 'setActive'])
         ->name('semesters.setActive');
-    });
+});
 
 Route::get('/health', function () {
     return 'OK';
 });
-
-Route::post('/forgot-password/verify', [ForgotPasswordController::class, 'verify'])
-    ->middleware('throttle:6,1')
-    ->name('password.verify');
-
-Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'reset'])
-    ->name('password.reset.custom');
 
 require __DIR__.'/settings.php';

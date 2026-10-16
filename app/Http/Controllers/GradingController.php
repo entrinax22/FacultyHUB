@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class GradingController extends Controller
 {
@@ -77,6 +78,13 @@ class GradingController extends Controller
                 'raw_score' => 'required|numeric|min:0',
                 'remarks' => 'nullable|string|max:1000',
             ]);
+
+            if ((float) $validated['raw_score'] > (float) $submission->assignment->max_score) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Score cannot exceed {$submission->assignment->max_score}.",
+                ], 422);
+            }
 
             $grade = Grade::updateOrCreate(
                 [
@@ -145,6 +153,8 @@ class GradingController extends Controller
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
+        } catch (HttpException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             report($e);
 
@@ -177,6 +187,11 @@ class GradingController extends Controller
             );
 
             $assignment = Assignment::findOrFail($assignmentId);
+            abort_unless(
+                ! $request->user()?->isFaculty()
+                    || (int) $assignment->section?->faculty_id === (int) $request->user()->id,
+                403
+            );
             $newlyReleasedStudentIds = Grade::query()
                 ->where('assignment_id', $assignmentId)
                 ->where('is_released', false)
@@ -212,6 +227,8 @@ class GradingController extends Controller
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
+        } catch (HttpException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             report($e);
 
@@ -236,8 +253,17 @@ class GradingController extends Controller
             $encryptedId
         );
 
-        return Submission::query()
+        $submission = Submission::query()
+            ->with('assignment.section')
             ->findOrFail($id);
+
+        abort_unless(
+            ! request()->user()?->isFaculty()
+                || (int) $submission->assignment?->section?->faculty_id === (int) request()->user()->id,
+            403
+        );
+
+        return $submission;
     }
 
     /*

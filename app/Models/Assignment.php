@@ -3,8 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\GradingComponent;
-use App\Models\GradingItem;
 
 class Assignment extends Model
 {
@@ -14,6 +12,7 @@ class Assignment extends Model
         'rubric', 'language', 'answer_release_at',
         'duration_minutes',
         'proctoring_enabled',
+        'plagiarism_published_run_id',
     ];
 
     protected $casts = [
@@ -64,6 +63,11 @@ class Assignment extends Model
     public function plagiarismReports()
     {
         return $this->hasMany(PlagiarismReport::class);
+    }
+
+    public function publishedPlagiarismRun()
+    {
+        return $this->belongsTo(AiProcessingRun::class, 'plagiarism_published_run_id');
     }
 
     public function isPastDue(): bool

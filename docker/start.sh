@@ -34,16 +34,6 @@ echo "Database migrations completed."
 
 echo ""
 echo "=========================================="
-echo "Running database seeders..."
-echo "=========================================="
-
-php artisan db:seed --force
-
-echo ""
-echo "Database seeding completed."
-
-echo ""
-echo "=========================================="
 echo "Clearing Laravel caches..."
 echo "=========================================="
 

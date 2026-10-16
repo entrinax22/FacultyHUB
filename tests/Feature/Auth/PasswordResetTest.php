@@ -1,10 +1,9 @@
 <?php
 
-use App\Models\Student;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Fortify\Features;
 
@@ -30,58 +29,11 @@ test('reset password link can be requested', function () {
     Notification::assertSentTo($user, ResetPassword::class);
 });
 
-test('student number verifies the account for direct password reset', function () {
-    Notification::fake();
-
-    $user = User::factory()->create();
-    Student::create([
-        'user_id' => $user->id,
-        'student_no' => '2026-12345',
-        'first_name' => 'Test',
-        'last_name' => 'Student',
-        'email' => $user->email,
-        'course' => 'Computer Science',
-        'year_level' => 1,
-    ]);
-
-    $this->post(route('password.verify'), [
-        'mode' => 'student_no',
-        'identifier' => '2026-12345',
-    ])->assertSessionHas('status');
-
-    $this->assertSame($user->id, session('password_reset_user_id'));
-    Notification::assertNothingSent();
-});
-
-test('email verifies the account for direct password reset', function () {
-    Notification::fake();
-
-    $user = User::factory()->create();
-
-    $this->post(route('password.verify'), [
+test('legacy custom password reset endpoints are unavailable', function () {
+    $this->post('/forgot-password/verify', [
         'mode' => 'email',
-        'identifier' => $user->email,
-    ])->assertSessionHas('status');
-
-    $this->assertSame($user->id, session('password_reset_user_id'));
-    Notification::assertNothingSent();
-});
-
-test('password can be changed after account verification', function () {
-    $user = User::factory()->create();
-
-    $this->post(route('password.verify'), [
-        'mode' => 'email',
-        'identifier' => $user->email,
-    ]);
-
-    $this->post(route('password.reset.custom'), [
-        'password' => 'new-password-123',
-        'password_confirmation' => 'new-password-123',
-    ])->assertRedirect(route('login'));
-
-    $this->assertTrue(Hash::check('new-password-123', $user->fresh()->password));
-    $this->assertNull(session('password_reset_user_id'));
+        'identifier' => 'person@example.com',
+    ])->assertNotFound();
 });
 
 test('reset password screen can be rendered', function () {
@@ -134,4 +86,71 @@ test('password cannot be reset with invalid token', function () {
     ]);
 
     $response->assertSessionHasErrors('email');
+});
+
+test('password reset tokens expire', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email]);
+
+    Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
+        $this->travel(61)->minutes();
+
+        $this->post(route('password.update'), [
+            'token' => $notification->token,
+            'email' => $user->email,
+            'password' => 'newpassword123',
+            'password_confirmation' => 'newpassword123',
+        ])->assertSessionHasErrors('email');
+
+        return true;
+    });
+});
+
+test('password reset tokens cannot be reused', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email]);
+
+    Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
+        $payload = [
+            'token' => $notification->token,
+            'email' => $user->email,
+            'password' => 'newpassword123',
+            'password_confirmation' => 'newpassword123',
+        ];
+
+        $this->post(route('password.update'), $payload)->assertSessionHasNoErrors();
+        expect(Hash::check('newpassword123', $user->refresh()->password))->toBeTrue();
+
+        $this->post(route('password.update'), $payload)->assertSessionHasErrors('email');
+
+        return true;
+    });
+});
+
+test('unknown password reset requests return a generic response', function () {
+    Notification::fake();
+
+    $response = $this->from(route('password.request'))
+        ->post(route('password.email'), ['email' => 'unknown@example.com']);
+
+    $response->assertRedirect(route('password.request'));
+    $response->assertSessionHas('status', __('passwords.sent'));
+    Notification::assertNothingSent();
+});
+
+test('password reset requests are throttled', function () {
+    Notification::fake();
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('password.email'), ['email' => 'throttle@example.com']);
+    }
+
+    $this->post(route('password.email'), ['email' => 'throttle@example.com'])
+        ->assertTooManyRequests();
 });

@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import {
-    showApiToast,
-    showApiError,
-} from '@/lib/flashToast';
 
-import { ref, onMounted } from 'vue';
 import {
     Users,
     Search,
@@ -15,6 +10,7 @@ import {
     BookOpen,
     CheckCircle,
 } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
 
 import BaseTable from '@/components/BaseTable.vue';
 
@@ -29,6 +25,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    showApiToast,
+    showApiError,
+} from '@/lib/flashToast';
 
 type User = {
     id: string;

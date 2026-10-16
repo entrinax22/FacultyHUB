@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SecurityHeaders::class,
+            \App\Http\Middleware\ThrottlePasswordReset::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -29,6 +30,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
+            'admin.2fa' => \App\Http\Middleware\EnsureAdminTwoFactor::class,
+            'faculty.resource' => \App\Http\Middleware\EnsureFacultyResourceAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

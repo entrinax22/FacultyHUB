@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceSession;
+use App\Models\Enrollment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -35,6 +36,16 @@ class AttendanceRecordController extends Controller
 
         foreach ($validated['records'] as $row) {
             $studentId = $this->decryptId($row['student_id']);
+
+            abort_unless(
+                Enrollment::query()
+                    ->where('student_id', $studentId)
+                    ->where('section_id', $session->section_id)
+                    ->where('status', 'active')
+                    ->exists(),
+                422,
+                'The student is not actively enrolled in this section.'
+            );
 
             AttendanceRecord::updateOrCreate(
                 [

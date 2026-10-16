@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { ref } from 'vue';
 import { X, Upload, FileText, BookOpen } from 'lucide-vue-next';
+import { ref } from 'vue';
 
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import InputError from '@/components/InputError.vue';
 
 import {
     showApiToast,
@@ -76,6 +76,7 @@ const processing = ref(false);
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const selectedFileNames = ref<string[]>([]);
+const existingFiles = ref(props.module?.files ?? []);
 
 function clearError(field: string) {
     delete errors.value[field];
@@ -128,7 +129,7 @@ async function removeExistingFile(fileId: string) {
         showApiToast(response);
 
         if (props.module) {
-            props.module.files = props.module.files.filter(
+            existingFiles.value = existingFiles.value.filter(
                 (file) => file.id !== fileId,
             );
         }
@@ -321,7 +322,7 @@ async function submit() {
 
                 <div class="space-y-1.5">
                     <div
-                        v-for="file in module.files"
+                        v-for="file in existingFiles"
                         :key="file.id"
                         class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
                     >

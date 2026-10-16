@@ -4,13 +4,14 @@ import axios from 'axios';
 
 import { ArrowLeft, Bot, CheckCircle2, Loader2, User } from 'lucide-vue-next';
 
+import { onMounted, ref } from 'vue';
+import AiGradingPanel from '@/components/AiGradingPanel.vue';
+import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import InputError from '@/components/InputError.vue';
 
-import { onMounted, ref } from 'vue';
 
 import { showApiError, showApiToast } from '@/lib/flashToast';
 
@@ -544,6 +545,20 @@ onMounted(() => {
             <!-- ======================================================== -->
 
             <div class="space-y-4">
+                <AiGradingPanel
+                    v-if="
+                        submission.assignment &&
+                        (submission.assignment.type === 'essay' ||
+                            submission.assignment.type === 'code') &&
+                        !submission.grade &&
+                        submission.status !== 'approved'
+                    "
+                    :assignment-id="submission.assignment.id"
+                    :submission-id="submission.id"
+                    mode="individual"
+                    @changed="loadSubmission"
+                />
+
                 <!-- ==================================================== -->
                 <!-- AI Feedback -->
                 <!-- ==================================================== -->

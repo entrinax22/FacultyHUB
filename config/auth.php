@@ -4,6 +4,8 @@ use App\Models\User;
 
 return [
 
+    'require_admin_2fa' => env('REQUIRE_ADMIN_2FA', false),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Defaults

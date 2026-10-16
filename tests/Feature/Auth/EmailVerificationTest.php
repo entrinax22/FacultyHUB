@@ -98,3 +98,28 @@ test('already verified user visiting verification link is redirected without fir
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
 });
+
+test('expired email verification links are rejected', function () {
+    $user = User::factory()->unverified()->create();
+
+    $verificationUrl = URL::temporarySignedRoute(
+        'verification.verify',
+        now()->subMinute(),
+        ['id' => $user->id, 'hash' => sha1($user->email)],
+    );
+
+    $this->actingAs($user)->get($verificationUrl)->assertForbidden();
+    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
+});
+
+test('verification notifications are throttled', function () {
+    Event::fake();
+
+    $user = User::factory()->unverified()->create();
+
+    foreach (range(1, 7) as $attempt) {
+        $response = $this->actingAs($user)->post(route('verification.send'));
+    }
+
+    $response->assertTooManyRequests();
+});

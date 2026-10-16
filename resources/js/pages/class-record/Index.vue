@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
+import { Settings, BarChart2, Lock, FileDown } from 'lucide-vue-next';
 import { ref, computed, onMounted } from 'vue';
-import { Settings, BarChart2, Download, Lock, FileDown } from 'lucide-vue-next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { showApiToast, showApiError } from '@/lib/flashToast';
@@ -487,6 +487,7 @@ async function releaseAll() {
 
     if (!confirm('Release all component grades to students?')) {
         console.log('2. User cancelled');
+
         return;
     }
 

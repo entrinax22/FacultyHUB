@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, ref } from 'vue';
 
 import {
     Users,
@@ -13,16 +12,17 @@ import {
     Loader2,
     Shield,
 } from 'lucide-vue-next';
+import { onMounted, ref } from 'vue';
 
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 
 import { showApiError } from '@/lib/flashToast';
 

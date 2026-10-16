@@ -76,7 +76,15 @@ services:
             sync: false
 
           - key: MAIL_MAILER
-            value: log
+            value: resend
+          - key: RESEND_API_KEY
+            sync: false
+          - key: MAIL_FROM_ADDRESS
+            sync: false
+          - key: MAIL_FROM_NAME
+            value: FacultyHUB
+          - key: SESSION_SECURE_COOKIE
+            value: "true"
           - key: LOG_LEVEL
             value: error
 

@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
 
+
+import axios from 'axios';
 import {
     Search,
     BookOpen,
     CheckCircle,
     Users,
 } from 'lucide-vue-next';
-
-import axios from 'axios';
-import { showApiError, showApiToast } from '@/lib/flashToast';
+import { ref, computed } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { showApiError, showApiToast } from '@/lib/flashToast';
 
 // =====================================================
 // Types

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, ref } from 'vue';
 import {
     BarChart3,
     Users,
@@ -11,6 +10,7 @@ import {
     BookOpen,
     GraduationCap,
 } from 'lucide-vue-next';
+import { onMounted, ref } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import {
     showApiError,

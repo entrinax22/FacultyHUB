@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\Responses\GenericPasswordResetLinkRequestResponse;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,7 +22,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(
+            FailedPasswordResetLinkRequestResponse::class,
+            GenericPasswordResetLinkRequestResponse::class,
+        );
     }
 
     /**
@@ -73,6 +78,10 @@ class AppServiceProvider extends ServiceProvider
         // 2FA: 5 attempts per minute per session
         RateLimiter::for('two-factor', function (Request $request) {
             return Limit::perMinute(5)->by($request->session()->getId());
+        });
+
+        RateLimiter::for('verification', function (Request $request) {
+            return Limit::perMinute(6)->by($request->user()?->id ?: $request->ip());
         });
 
         // File upload endpoint

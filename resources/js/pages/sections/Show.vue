@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
 import axios from 'axios';
 
 import {
-    Users,
     Plus,
     Trash2,
     Search,
@@ -15,6 +13,7 @@ import {
     X,
     Loader2,
 } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
 
 import BaseTable from '@/components/BaseTable.vue';
 

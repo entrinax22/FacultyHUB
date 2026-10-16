@@ -99,6 +99,17 @@ export function showApiToast(response: any): void {
 }
 
 /**
+ * Show a non-successful Axios response as a warning when processing was safely deferred.
+ */
+export function showApiWarning(response: any): void {
+    const data = response?.data;
+
+    toast.warning(
+        data?.message || 'Processing was deferred. Please try again later.'
+    );
+}
+
+/**
  * Show Axios error toast.
  */
 export function showApiError(error: any): void {

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 
+import {
+    Pencil,
+    BookOpen,
+    GraduationCap,
+} from 'lucide-vue-next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -11,11 +16,6 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 
-import {
-    Pencil,
-    BookOpen,
-    GraduationCap,
-} from 'lucide-vue-next';
 
 type Enrollment = {
     id: string;

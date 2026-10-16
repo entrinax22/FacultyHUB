@@ -2,8 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\AiSetting;
 use App\Models\AiProviderConfig;
+use App\Models\AiSetting;
+use App\Models\PlagiarismRunSubmission;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -63,9 +64,182 @@ class AIGraderService
         return $this->model;
     }
 
+    public function testPlainTextPrompt(string $prompt): array
+    {
+        if (! config('gemini_playground.enabled') || (config('app.env') === 'production' && ! config('gemini_playground.production_enabled'))) {
+            return $this->playgroundError('playground_disabled');
+        }
+
+        if ($this->provider !== 'gemini' || empty($this->apiKey)) {
+            return $this->playgroundError('provider_not_configured');
+        }
+
+        $start = hrtime(true);
+
+        try {
+            $response = Http::timeout(60)->post("{$this->baseUrl}/{$this->model}:generateContent?key={$this->apiKey}", [
+                'contents' => [['parts' => [['text' => $prompt]]]],
+                'generationConfig' => ['temperature' => $this->temperature, 'maxOutputTokens' => $this->maxOutputTokens],
+            ]);
+            $duration = (int) round((hrtime(true) - $start) / 1_000_000);
+            $text = $response->json('candidates.0.content.parts.0.text');
+
+            if ($response->successful() && is_string($text) && $text !== '') {
+                return ['success' => true, 'model' => $this->model, 'http_status' => $response->status(), 'duration_ms' => $duration, 'response_text' => $text, 'error_code' => null, 'error_message' => null, 'key_source' => $this->keySource()];
+            }
+
+            return $this->playgroundError(match ($response->status()) {
+                429 => 'provider_rate_limited', 500, 502, 503, 504 => 'provider_unavailable', default => 'provider_request_failed'
+            }, $response->status(), $duration);
+        } catch (\Throwable) {
+            return $this->playgroundError('provider_request_failed', null, (int) round((hrtime(true) - $start) / 1_000_000));
+        }
+    }
+
+    public function testInteractionsPrompt(string $prompt): array
+    {
+        if (! config('gemini_playground.enabled') || (config('app.env') === 'production' && ! config('gemini_playground.production_enabled'))) {
+            return $this->playgroundError('playground_disabled');
+        }
+        if ($this->provider !== 'gemini' || empty($this->apiKey)) {
+            return $this->playgroundError('provider_not_configured');
+        }
+        $start = hrtime(true);
+        try {
+            $response = Http::timeout(60)->withHeaders(['x-goog-api-key' => $this->apiKey])->post('https://generativelanguage.googleapis.com/v1beta/interactions', ['model' => $this->model, 'input' => $prompt]);
+            $duration = (int) round((hrtime(true) - $start) / 1_000_000);
+            $text = collect($response->json('steps', []))->where('type', 'model_output')->flatMap(fn ($step) => $step['content'] ?? [])->where('type', 'text')->pluck('text')->filter(fn ($value) => is_string($value))->implode('');
+            if ($response->successful() && $text !== '') {
+                return ['success' => true, 'model' => $this->model, 'http_status' => $response->status(), 'duration_ms' => $duration, 'response_text' => $text, 'error_code' => null, 'error_message' => null, 'key_source' => $this->keySource()];
+            }
+
+            return $this->playgroundError(match ($response->status()) {
+                429 => 'provider_rate_limited', 500, 502, 503, 504 => 'provider_unavailable', default => 'provider_request_failed'
+            }, $response->status(), $duration);
+        } catch (\Throwable) {
+            return $this->playgroundError('provider_request_failed', null, (int) round((hrtime(true) - $start) / 1_000_000));
+        }
+    }
+
+    private function keySource(): string
+    {
+        $provider = AiProviderConfig::active();
+
+        return filled($provider?->api_key) ? 'database' : 'environment';
+    }
+
+    private function playgroundError(string $code, ?int $status = null, ?int $duration = null): array
+    {
+        $messages = ['playground_disabled' => 'Gemini playground is disabled.', 'provider_not_configured' => 'Gemini is not configured.', 'provider_rate_limited' => 'Gemini rate limit or quota reached.', 'provider_unavailable' => 'Gemini is temporarily unavailable.', 'provider_request_failed' => 'Gemini request could not be completed.'];
+
+        return ['success' => false, 'model' => $this->model, 'http_status' => $status, 'duration_ms' => $duration, 'response_text' => null, 'error_code' => $code, 'error_message' => $messages[$code], 'key_source' => $this->keySource()];
+    }
+
+    public function validateGradeResponse(
+        array $result,
+        float $maxScore,
+        string $assignmentType
+    ): array {
+        if (! in_array($assignmentType, ['essay', 'code'], true)) {
+            throw new \InvalidArgumentException('Unsupported AI grading response type.');
+        }
+
+        if (! is_finite($maxScore) || $maxScore < 0) {
+            throw new \InvalidArgumentException('Invalid assignment maximum score.');
+        }
+
+        $this->validateNumber($result['score'] ?? null, 'score', 0, $maxScore);
+        $this->validateText($result['overall_comment'] ?? null, 'overall comment', 5000);
+
+        if ($assignmentType === 'essay') {
+            $this->validateEssayFeedback($result);
+        } else {
+            $this->validateCodeFeedback($result);
+        }
+
+        try {
+            $encoded = json_encode($result, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new \InvalidArgumentException('AI feedback is not valid JSON data.');
+        }
+
+        if (strlen($encoded) > 20000) {
+            throw new \InvalidArgumentException('AI feedback is too large.');
+        }
+
+        return $result;
+    }
+
+    private function validateEssayFeedback(array $result): void
+    {
+        $criteria = $result['criterion_feedback'] ?? null;
+
+        if (! is_array($criteria) || ! array_is_list($criteria) || count($criteria) > 50) {
+            throw new \InvalidArgumentException('Invalid criterion feedback.');
+        }
+
+        foreach ($criteria as $criterion) {
+            if (! is_array($criterion)) {
+                throw new \InvalidArgumentException('Invalid criterion feedback item.');
+            }
+
+            $this->validateText($criterion['criterion'] ?? null, 'criterion name', 250);
+            $maximum = $this->validateNumber($criterion['max'] ?? null, 'criterion maximum', 0);
+            $this->validateNumber($criterion['score'] ?? null, 'criterion score', 0, $maximum);
+            $this->validateText($criterion['feedback'] ?? null, 'criterion feedback', 2000);
+        }
+    }
+
+    private function validateCodeFeedback(array $result): void
+    {
+        foreach (['correctness', 'logic_quality', 'code_quality'] as $field) {
+            $this->validateNumber($result[$field] ?? null, $field, 0, 100);
+        }
+
+        $comments = $result['inline_comments'] ?? null;
+
+        if (! is_array($comments) || ! array_is_list($comments) || count($comments) > 100) {
+            throw new \InvalidArgumentException('Invalid inline comments.');
+        }
+
+        foreach ($comments as $comment) {
+            if (! is_array($comment) || ! is_int($comment['line'] ?? null) || $comment['line'] < 1) {
+                throw new \InvalidArgumentException('Invalid inline comment line.');
+            }
+
+            $this->validateText($comment['comment'] ?? null, 'inline comment', 1000);
+        }
+    }
+
+    private function validateNumber(
+        mixed $value,
+        string $field,
+        float $minimum,
+        ?float $maximum = null
+    ): float {
+        if ((! is_int($value) && ! is_float($value)) || ! is_finite((float) $value)) {
+            throw new \InvalidArgumentException("Invalid {$field}.");
+        }
+
+        $number = (float) $value;
+
+        if ($number < $minimum || ($maximum !== null && $number > $maximum)) {
+            throw new \InvalidArgumentException("{$field} is outside the allowed range.");
+        }
+
+        return $number;
+    }
+
+    private function validateText(mixed $value, string $field, int $maximumLength): void
+    {
+        if (! is_string($value) || trim($value) === '' || mb_strlen($value) > $maximumLength) {
+            throw new \InvalidArgumentException("Invalid {$field}.");
+        }
+    }
+
     public function createAssignmentDraft(string $documentText): array
     {
-                $prompt = <<<PROMPT
+        $prompt = <<<PROMPT
 You are an instructional designer. Analyze the following PDF and classify it before creating a draft assignment for a teacher to review.
 
 Return ONLY valid JSON in this exact format:
@@ -101,30 +275,30 @@ PDF TEXT:
 {$documentText}
 PROMPT;
 
-                $draft = $this->call($prompt);
+        $draft = $this->call($prompt);
 
-                $containsChoiceOptions = preg_match(
-                    '/(?:^|\n)\s*(?:\d+[.)]|question\s+\d+[:.)]).*(?:\n\s*[A-D][.)]\s+)/ims',
-                    $documentText
-                ) === 1;
+        $containsChoiceOptions = preg_match(
+            '/(?:^|\n)\s*(?:\d+[.)]|question\s+\d+[:.)]).*(?:\n\s*[A-D][.)]\s+)/ims',
+            $documentText
+        ) === 1;
 
-                if (($draft['type'] ?? null) === 'mcq' || $containsChoiceOptions) {
-                    if (empty($draft['questions'])) {
-                        $draft['questions'] = $this->extractMultipleChoiceQuestions($documentText);
-                    }
+        if (($draft['type'] ?? null) === 'mcq' || $containsChoiceOptions) {
+            if (empty($draft['questions'])) {
+                $draft['questions'] = $this->extractMultipleChoiceQuestions($documentText);
+            }
 
-                    if (! empty($draft['questions'])) {
-                        $draft['type'] = 'mcq';
-                        $draft['category'] = $draft['category'] ?? 'quiz';
-                    }
-                }
+            if (! empty($draft['questions'])) {
+                $draft['type'] = 'mcq';
+                $draft['category'] = $draft['category'] ?? 'quiz';
+            }
+        }
 
-                return $draft;
+        return $draft;
     }
 
-        private function extractMultipleChoiceQuestions(string $documentText): array
-        {
-                $prompt = <<<PROMPT
+    private function extractMultipleChoiceQuestions(string $documentText): array
+    {
+        $prompt = <<<PROMPT
 Extract every multiple-choice question from the text below.
 
 Return ONLY a JSON array. Do not summarize, omit, or rewrite questions:
@@ -144,17 +318,18 @@ TEXT:
 {$documentText}
 PROMPT;
 
-                $result = $this->call($prompt, 8192);
+        $result = $this->call($prompt, 8192);
 
-                return is_array($result) && array_is_list($result) ? $result : [];
-        }
+        return is_array($result) && array_is_list($result) ? $result : [];
+    }
 
     public function gradeEssay(
         string $title,
         string $instructions,
         string $rubric,
         string $essayText,
-        float $maxScore
+        float $maxScore,
+        bool $includeErrorCode = false
     ): array {
         $context = $this->contextBlock($this->essayContext);
         $instructionsBlock = $this->includeAssignmentInstructions ? "**Instructions:** {$instructions}" : '**Instructions:** Not included by AI settings.';
@@ -183,7 +358,12 @@ Respond ONLY with valid JSON in this exact format:
 }
 PROMPT;
 
-        return $this->call($prompt);
+        return $this->call(
+            $prompt,
+            null,
+            $includeErrorCode ? max(1, (int) config('ai_processing.timeout_budget_seconds')) : null,
+            $includeErrorCode
+        );
     }
 
     public function gradeCode(
@@ -192,7 +372,8 @@ PROMPT;
         string $rubric,
         string $code,
         string $language,
-        float $maxScore
+        float $maxScore,
+        bool $includeErrorCode = false
     ): array {
         $context = $this->contextBlock($this->codeContext);
         $instructionsBlock = $this->includeAssignmentInstructions ? "**Problem Description:** {$instructions}" : '**Problem Description:** Not included by AI settings.';
@@ -225,7 +406,12 @@ Respond ONLY with valid JSON in this exact format:
 }
 PROMPT;
 
-        return $this->call($prompt);
+        return $this->call(
+            $prompt,
+            null,
+            $includeErrorCode ? max(1, (int) config('ai_processing.timeout_budget_seconds')) : null,
+            $includeErrorCode
+        );
     }
 
     public function checkPlagiarism(array $submissions, string $assignmentTitle): array
@@ -265,34 +451,128 @@ PROMPT;
         return $this->call($prompt);
     }
 
-    private function call(string $prompt, ?int $maxOutputTokens = null): array
+    public function estimatePlagiarismPairInputTokens(
+        PlagiarismRunSubmission $first,
+        PlagiarismRunSubmission $second,
+        string $assignmentTitle
+    ): int {
+        return max(1, (int) ceil(strlen($this->plagiarismPairPrompt($first, $second, $assignmentTitle)) / 4));
+    }
+
+    public function analyzePlagiarismPair(
+        PlagiarismRunSubmission $first,
+        PlagiarismRunSubmission $second,
+        string $assignmentTitle
+    ): array {
+        return $this->call(
+            $this->plagiarismPairPrompt($first, $second, $assignmentTitle),
+            max(1, (int) config('ai_processing.plagiarism_max_output_tokens')),
+            max(1, (int) config('ai_processing.timeout_budget_seconds')),
+            true
+        );
+    }
+
+    public function validatePlagiarismPairResponse(array $result): array
     {
+        $similarity = $result['similarity'] ?? null;
+        $flagged = $result['flagged'] ?? null;
+        $explanation = $result['explanation'] ?? null;
+
+        if (! is_int($similarity) && ! is_float($similarity)) {
+            throw new \InvalidArgumentException('AI similarity must be numeric.');
+        }
+
+        if (! is_finite($similarity) || $similarity < 0 || $similarity > 100) {
+            throw new \InvalidArgumentException('AI similarity is outside the allowed range.');
+        }
+
+        if (! is_bool($flagged) || $flagged !== ($similarity >= 70)) {
+            throw new \InvalidArgumentException('AI plagiarism flag is inconsistent with the similarity score.');
+        }
+
+        if (! is_string($explanation) || trim($explanation) === '' || strlen($explanation) > 5000) {
+            throw new \InvalidArgumentException('AI plagiarism explanation is invalid.');
+        }
+
+        return [
+            'similarity' => $similarity,
+            'flagged' => $flagged,
+            'explanation' => trim($explanation),
+        ];
+    }
+
+    private function plagiarismPairPrompt(
+        PlagiarismRunSubmission $first,
+        PlagiarismRunSubmission $second,
+        string $assignmentTitle
+    ): string {
+        $combinedContentBytes = strlen($first->content) + strlen($second->content);
+
+        if ($combinedContentBytes > max(1, (int) config('ai_processing.plagiarism_max_pair_content_bytes'))) {
+            throw new \InvalidArgumentException('Pair content exceeds the configured limit.');
+        }
+
+        $context = $this->contextBlock($this->plagiarismContext);
+        $prompt = <<<PROMPT
+You are an academic integrity checker. Independently compare these two anonymous submissions for the assignment "{$assignmentTitle}".
+
+{$context}
+
+--- Submission A ---
+{$first->content}
+
+--- Submission B ---
+{$second->content}
+
+Return ONLY valid JSON with this exact structure:
+{
+  "similarity": <number from 0 to 100>,
+  "flagged": <true when similarity is 70 or higher, otherwise false>,
+  "explanation": "<brief reason>"
+}
+PROMPT;
+
+        if (strlen($prompt) > max(1, (int) config('ai_processing.plagiarism_max_prompt_bytes'))) {
+            throw new \InvalidArgumentException('Pair prompt exceeds the configured limit.');
+        }
+
+        return $prompt;
+    }
+
+    private function call(
+        string $prompt,
+        ?int $maxOutputTokens = null,
+        ?int $timeoutSeconds = null,
+        bool $includeErrorCode = false
+    ): array {
         if (! $this->enabled) {
-            return ['error' => 'AI assessment is disabled.'];
+            return $this->providerError('ai_disabled', $includeErrorCode);
         }
 
         if ($this->provider !== 'gemini') {
-            return ['error' => "{$this->provider} is saved but not connected to the grader yet."];
+            return $includeErrorCode
+                ? $this->providerError('provider_unavailable', true)
+                : ['error' => "{$this->provider} is saved but not connected to the grader yet."];
         }
 
         if (empty($this->apiKey)) {
-            Log::warning('AIGraderService: GEMINI_API_KEY is not set.');
+            Log::warning('AIGraderService: Gemini API key is not configured.');
 
-            return ['error' => 'AI API key not configured.'];
+            return $this->providerError('provider_not_configured', $includeErrorCode);
         }
 
         try {
             $url = "{$this->baseUrl}/{$this->model}:generateContent?key={$this->apiKey}";
 
-            $response = Http::timeout(60)->post($url, [
+            $response = Http::timeout($timeoutSeconds ?? 60)->post($url, [
                 'contents' => [
                     ['parts' => [['text' => $prompt]]],
                 ],
                 'generationConfig' => [
-                    'temperature'       => $this->temperature,
-                    'maxOutputTokens'   => $maxOutputTokens ?? $this->maxOutputTokens,
-                    'responseMimeType'  => 'application/json',
-                    'thinkingConfig'    => ['thinkingBudget' => 0],
+                    'temperature' => $this->temperature,
+                    'maxOutputTokens' => $maxOutputTokens ?? $this->maxOutputTokens,
+                    'responseMimeType' => 'application/json',
+                    'thinkingConfig' => ['thinkingBudget' => 0],
                 ],
             ])->throw()->json();
 
@@ -306,22 +586,46 @@ PROMPT;
                 $decoded = json_decode($matches[0] ?? '{}', true) ?? [];
             }
 
-            return $decoded ?: ['error' => 'Could not parse AI response.'];
+            return $decoded ?: $this->providerError('invalid_response', $includeErrorCode);
         } catch (RequestException $e) {
-            Log::error('AIGraderService error: '.$e->getMessage());
-
             $status = $e->response?->status();
+            Log::warning('AIGraderService request failed.', ['status' => $status]);
 
-            return ['error' => match ($status) {
-                400, 401, 403 => 'Gemini rejected the API key. Replace the saved key in AI Settings, then run Check Status again.',
-                429 => 'Gemini rate limit or quota reached. Please try again later or use another key.',
-                default => 'Gemini could not process the request. Please check the provider settings and try again.',
-            }];
+            if (! $includeErrorCode) {
+                return ['error' => match ($status) {
+                    400, 401, 403 => 'Gemini rejected the API key. Replace the saved key in AI Settings, then run Check Status again.',
+                    429 => 'Gemini rate limit or quota reached. Please try again later or use another key.',
+                    default => 'Gemini could not process the request. Please check the provider settings and try again.',
+                }];
+            }
+
+            return $this->providerError(match ($status) {
+                429 => 'provider_rate_limited',
+                500, 502, 503, 504 => 'provider_unavailable',
+                default => 'provider_request_failed',
+            }, $includeErrorCode);
         } catch (\Throwable $e) {
-            Log::error('AIGraderService error: '.$e->getMessage());
+            Log::warning('AIGraderService request could not be completed.', ['exception' => $e::class]);
 
-            return ['error' => 'The AI request could not be completed. Please try again.'];
+            return $this->providerError('provider_request_failed', $includeErrorCode);
         }
+    }
+
+    private function providerError(string $code, bool $includeErrorCode): array
+    {
+        $messages = [
+            'ai_disabled' => 'AI assessment is disabled.',
+            'provider_not_configured' => 'AI API key not configured.',
+            'provider_rate_limited' => 'Gemini rate limit or quota reached. Please try again later.',
+            'invalid_response' => 'Could not parse AI response.',
+            'provider_unavailable' => 'Gemini could not process the request. Please try again later.',
+            'provider_request_failed' => 'The AI request could not be completed. Please try again.',
+        ];
+
+        return array_filter([
+            'error' => $messages[$code] ?? 'The AI request could not be completed. Please try again.',
+            'error_code' => $includeErrorCode ? $code : null,
+        ], fn ($value) => $value !== null);
     }
 
     private function contextBlock(?string $assessmentContext): string

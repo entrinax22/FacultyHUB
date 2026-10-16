@@ -221,6 +221,7 @@ watch(
     (value) => {
         if (!value || value === 'none') {
             form.value.component_id = 'none';
+
             return;
         }
 
@@ -416,6 +417,7 @@ async function importPdf(event: Event) {
     if (file.type !== 'application/pdf') {
         toast.error('Only PDF files can be uploaded.');
         input.value = '';
+
         return;
     }
 

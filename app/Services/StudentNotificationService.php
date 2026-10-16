@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Assignment;
-use App\Models\Enrollment;
 use App\Models\Student;
 use App\Models\Submission;
 use App\Models\User;
@@ -14,12 +13,15 @@ class StudentNotificationService
 {
     public function notifySectionStudents(int $sectionId, array $data): void
     {
-        $studentIds = Enrollment::query()
-            ->where('section_id', $sectionId)
-            ->where('status', 'active')
-            ->pluck('student_id');
-
-        $this->notifyStudents($studentIds, $data);
+        User::query()
+            ->where('role', 'student')
+            ->whereHas('student.enrollments', fn ($query) => $query
+                ->where('section_id', $sectionId)
+                ->where('status', 'active'))
+            ->lazyById(100)
+            ->each(fn (User $user) => $user->notify(
+                new StudentActivityNotification($data)
+            ));
     }
 
     public function notifyStudents(iterable $studentIds, array $data): void
@@ -40,24 +42,24 @@ class StudentNotificationService
     ): void {
         $assignment->loadMissing('section');
 
-        $userIds = User::query()
-            ->where('role', 'admin')
-            ->pluck('id');
+        User::query()
+            ->where(function ($query) use ($assignment) {
+                $query->where('role', 'admin');
 
-        if ($assignment->section?->faculty_id) {
-            $userIds->push($assignment->section->faculty_id);
-        }
-
-        $this->notifyUsers(
-            $userIds,
-            [
-                'type' => 'assignment_submission',
-                'title' => 'Assignment submitted',
-                'message' => "{$student->first_name} {$student->last_name} submitted {$assignment->title}.",
-                'url' => '/submissions/'.Crypt::encryptString((string) $submission->id).'/grade',
-            ],
-            ['admin', 'faculty']
-        );
+                if ($assignment->section?->faculty_id) {
+                    $query->orWhere('id', $assignment->section->faculty_id);
+                }
+            })
+            ->whereIn('role', ['admin', 'faculty'])
+            ->lazyById(100)
+            ->each(fn (User $user) => $user->notify(
+                new StudentActivityNotification([
+                    'type' => 'assignment_submission',
+                    'title' => 'Assignment submitted',
+                    'message' => "{$student->first_name} {$student->last_name} submitted {$assignment->title}.",
+                    'url' => '/submissions/'.Crypt::encryptString((string) $submission->id).'/grade',
+                ])
+            ));
     }
 
     private function notifyUsers(

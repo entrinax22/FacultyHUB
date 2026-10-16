@@ -9,7 +9,6 @@ import {
     Code2,
     FileText,
     Flag,
-    Maximize,
     ShieldCheck,
     Timer,
 } from 'lucide-vue-next';
@@ -190,12 +189,6 @@ const examStarted = computed(() =>
     ),
 );
 
-const examExpired = computed(
-    () =>
-        examStarted.value &&
-        remainingSeconds.value <= 0,
-);
-
 /*
 |--------------------------------------------------------------------------
 | Submission ID
@@ -261,6 +254,7 @@ let timer: number | undefined;
 function updateRemainingTime() {
     if (!examExpiresAt.value) {
         remainingSeconds.value = 0;
+
         return;
     }
 
@@ -1033,6 +1027,7 @@ function detachMonitoring() {
     if (!monitoringAttached) {
         stopHeartbeat();
         stopFlushRetry();
+
         return;
     }
 

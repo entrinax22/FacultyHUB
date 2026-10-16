@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
-
 import {
     Plus,
     Pencil,
@@ -12,12 +10,14 @@ import {
     AlertTriangle,
     Check,
 } from 'lucide-vue-next';
+import { computed, onMounted, ref } from 'vue';
 
+
+import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import InputError from '@/components/InputError.vue';
 
 import {
     showApiToast,
@@ -239,6 +239,7 @@ async function addComponent() {
     if (!addForm.value.name.trim()) {
         addErrors.value.name =
             'Component name is required.';
+
         return;
     }
 

@@ -34,6 +34,12 @@ class GradeEssayJob implements ShouldQueue
             throw new \RuntimeException('AI grading failed: ' . $result['error']);
         }
 
+        $result = $ai->validateGradeResponse(
+            $result,
+            $assignment->max_score,
+            'essay'
+        );
+
         AiFeedback::updateOrCreate(
             ['submission_id' => $this->submission->id],
             [
@@ -49,7 +55,10 @@ class GradeEssayJob implements ShouldQueue
 
     public function failed(\Throwable $e): void
     {
-        Log::error("GradeEssayJob failed for submission {$this->submission->id}: " . $e->getMessage());
+        Log::warning('AI essay grading failed.', [
+            'submission_id' => $this->submission->id,
+            'failure_type' => $e::class,
+        ]);
         $this->submission->update(['status' => 'pending']);
     }
 }

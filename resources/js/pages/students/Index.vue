@@ -2,11 +2,11 @@
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import { Plus, Pencil, Trash2, Eye } from 'lucide-vue-next';
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted } from 'vue';
 
+import BaseTable from '@/components/BaseTable.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import BaseTable from '@/components/BaseTable.vue';
 
 import { showApiToast, showApiError } from '@/lib/flashToast';
 

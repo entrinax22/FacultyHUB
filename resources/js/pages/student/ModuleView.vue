@@ -1,6 +1,7 @@
 ```vue
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import axios from 'axios';
 import {
     ArrowLeft,
     CheckCircle,
@@ -8,14 +9,13 @@ import {
     FileText,
 } from 'lucide-vue-next';
 import { ref } from 'vue';
-import axios from 'axios';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     showApiToast,
     showApiError,
 } from '@/lib/flashToast';
 
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 
 type ModuleFile = {
     id: string;

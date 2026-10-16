@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { reactive, ref, watch } from 'vue';
 import { Layers } from 'lucide-vue-next';
+import { reactive, ref } from 'vue';
 
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import InputError from '@/components/InputError.vue';
 
 import {
     Select,
@@ -102,6 +102,7 @@ async function submit() {
     } catch (error: any) {
         if (error.response?.status === 422) {
             errors.value = error.response.data.errors ?? {};
+
             return;
         }
 

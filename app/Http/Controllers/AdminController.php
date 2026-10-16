@@ -316,7 +316,7 @@ class AdminController extends Controller
                 'enrollments' => fn ($q) => $q->where('status', 'active'),
             ])
                 ->orderBy('created_at')
-                ->get()
+                ->cursor()
                 ->map(fn ($semester) => [
                     'label' => $semester->name . ' ' . $semester->school_year,
                     'sections' => $semester->sections_count,
@@ -343,25 +343,25 @@ class AdminController extends Controller
                 ->values();
 
             // Grade distribution
+            $roundedPercentage = 'CASE WHEN max_score > 0 THEN ROUND((raw_score * 100.0) / max_score) ELSE 0 END';
+            $gradeBand = "CASE
+                WHEN {$roundedPercentage} >= 90 THEN '90–100'
+                WHEN {$roundedPercentage} >= 80 THEN '80–89'
+                WHEN {$roundedPercentage} >= 75 THEN '75–79'
+                WHEN {$roundedPercentage} >= 60 THEN '60–74'
+                ELSE 'Below 60'
+            END";
+
             $gradeDistribution = Grade::where('is_released', true)
                 ->whereNotNull('raw_score')
                 ->whereNotNull('max_score')
+                ->selectRaw("{$gradeBand} as label, COUNT(*) as count")
+                ->groupByRaw($gradeBand)
+                ->orderByRaw('MIN(id)')
                 ->get()
-                ->map(fn ($grade) =>
-                    $grade->max_score > 0
-                        ? round(($grade->raw_score / $grade->max_score) * 100)
-                        : 0
-                )
-                ->groupBy(fn ($percentage) => match (true) {
-                    $percentage >= 90 => '90–100',
-                    $percentage >= 80 => '80–89',
-                    $percentage >= 75 => '75–79',
-                    $percentage >= 60 => '60–74',
-                    default => 'Below 60',
-                })
-                ->map(fn ($group, $label) => [
-                    'label' => $label,
-                    'count' => $group->count(),
+                ->map(fn ($band) => [
+                    'label' => $band->label,
+                    'count' => (int) $band->count,
                 ])
                 ->values();
 

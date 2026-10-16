@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, ref } from 'vue';
-
 import {
-    BarChart2,
     CheckCircle2,
     Loader2,
     Search,
 } from 'lucide-vue-next';
+import { onMounted, ref } from 'vue';
+
 
 import BaseTable from '@/components/BaseTable.vue';
 
@@ -142,8 +141,6 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 
 const processingRelease = ref(false);
-const processingPlagiarism = ref(false);
-
 const expandedSubmissionId =
     ref<string | null>(null);
 
@@ -337,33 +334,6 @@ async function releaseAll() {
         showApiError(error);
     } finally {
         processingRelease.value = false;
-    }
-}
-
-/*
-|--------------------------------------------------------------------------
-| Run Plagiarism
-|--------------------------------------------------------------------------
-*/
-
-async function runPlagiarism() {
-    processingPlagiarism.value = true;
-
-    try {
-        const response = await axios.post(
-            `/assignments/${props.assignment.id}/plagiarism/run`,
-        );
-
-        showApiToast(response);
-    } catch (error) {
-        console.error(
-            'RUN PLAGIARISM ERROR:',
-            error,
-        );
-
-        showApiError(error);
-    } finally {
-        processingPlagiarism.value = false;
     }
 }
 
@@ -616,45 +586,13 @@ onMounted(async () => {
             </Button>
 
             <Button
-                v-if="
-                    assignment.type === 'essay' &&
-                    (pagination?.total ?? 0) >= 2
-                "
+                v-if="assignment.type === 'essay' && (pagination?.total ?? 0) >= 2"
                 variant="outline"
-                size="sm"
-                :disabled="
-                    processingPlagiarism
-                "
-                @click="runPlagiarism"
-            >
-                <Loader2
-                    v-if="processingPlagiarism"
-                    class="mr-1.5 h-4 w-4 animate-spin"
-                />
-
-                <BarChart2
-                    v-else
-                    class="mr-1.5 h-4 w-4"
-                />
-
-                {{
-                    plagiarismRan
-                        ? 'Re-run'
-                        : 'Run'
-                }}
-                Plagiarism Check
-            </Button>
-
-            <Button
-                v-if="plagiarismRan"
-                variant="ghost"
                 size="sm"
                 as-child
             >
-                <Link
-                    :href="`/assignments/${assignment.id}/plagiarism`"
-                >
-                    View Plagiarism Report
+                <Link :href="`/assignments/${assignment.id}/plagiarism`">
+                    {{ plagiarismRan ? 'View Plagiarism Analysis' : 'Start Plagiarism Analysis' }}
                 </Link>
             </Button>
         </div>

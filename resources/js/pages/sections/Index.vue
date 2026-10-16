@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed, ref, onMounted, watch } from 'vue';
 import axios from 'axios';
 
 import {
@@ -14,6 +13,7 @@ import {
     ChevronRight,
     Loader2,
 } from 'lucide-vue-next';
+import { computed, ref, onMounted, watch } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

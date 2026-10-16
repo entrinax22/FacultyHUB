@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, ref } from 'vue';
 import { Plus, Trash2, ArrowLeft, RefreshCw } from 'lucide-vue-next';
+import { onMounted, ref } from 'vue';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

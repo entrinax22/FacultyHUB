@@ -63,7 +63,9 @@ defineOptions({
 });
 
 function gradeColor(pct: number | null): string {
-    if (pct === null) return '';
+    if (pct === null) {
+return '';
+}
 
     if (pct >= 90) {
         return 'text-green-600';

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
 import axios from 'axios';
 
 import {
@@ -8,6 +7,7 @@ import {
     Save,
     Lock,
 } from 'lucide-vue-next';
+import { computed, onMounted, ref } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

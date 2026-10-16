@@ -1,0 +1,24 @@
+<?php
+
+return [
+    'work_units_per_request' => (int) env('AI_PROCESSING_WORK_UNITS_PER_REQUEST', 1),
+    'max_input_bytes' => (int) env('AI_PROCESSING_MAX_INPUT_BYTES', 24000),
+    'max_retry_attempts' => (int) env('AI_PROCESSING_MAX_RETRY_ATTEMPTS', 3),
+    'timeout_budget_seconds' => (int) env('AI_PROCESSING_TIMEOUT_BUDGET_SECONDS', 25),
+    'lease_seconds' => (int) env('AI_PROCESSING_LEASE_SECONDS', 45),
+    'grading_daily_request_budget' => (int) env('AI_GRADING_DAILY_REQUEST_BUDGET', 25),
+    'grading_daily_input_token_budget' => (int) env('AI_GRADING_DAILY_INPUT_TOKEN_BUDGET', 125000),
+    'grading_requests_per_minute' => (int) env('AI_GRADING_REQUESTS_PER_MINUTE', 2),
+    'grading_retry_backoff_seconds' => (int) env('AI_GRADING_RETRY_BACKOFF_SECONDS', 30),
+    'grading_budget_timezone' => env('AI_GRADING_BUDGET_TIMEZONE', 'America/Los_Angeles'),
+    'plagiarism_max_pair_content_bytes' => (int) env('AI_PLAGIARISM_MAX_PAIR_CONTENT_BYTES', 16000),
+    'plagiarism_max_prompt_bytes' => (int) env('AI_PLAGIARISM_MAX_PROMPT_BYTES', 24000),
+    'plagiarism_max_output_tokens' => (int) env('AI_PLAGIARISM_MAX_OUTPUT_TOKENS', 512),
+    'plagiarism_max_pair_attempts' => (int) env('AI_PLAGIARISM_MAX_PAIR_ATTEMPTS', 3),
+    'plagiarism_daily_request_budget' => (int) env('AI_PLAGIARISM_DAILY_REQUEST_BUDGET', 50),
+    'plagiarism_daily_input_token_budget' => (int) env('AI_PLAGIARISM_DAILY_INPUT_TOKEN_BUDGET', 250000),
+    'plagiarism_requests_per_minute' => (int) env('AI_PLAGIARISM_REQUESTS_PER_MINUTE', 2),
+    'plagiarism_retry_backoff_seconds' => (int) env('AI_PLAGIARISM_RETRY_BACKOFF_SECONDS', 60),
+    'plagiarism_budget_timezone' => env('AI_PLAGIARISM_BUDGET_TIMEZONE', 'America/Los_Angeles'),
+    'plagiarism_max_submissions_per_run' => (int) env('AI_PLAGIARISM_MAX_SUBMISSIONS_PER_RUN', 100),
+];

@@ -58,13 +58,14 @@ function createStudentNotificationFixture(): array
     return compact('faculty', 'studentUser', 'student', 'semester', 'section');
 }
 
-function createStudentNotificationAssignment(Section $section): Assignment
+function createStudentNotificationAssignment(Section $section, string $type = 'essay'): Assignment
 {
     return Assignment::create([
         'section_id' => $section->id,
         'title' => 'Unit 1 Activity',
         'instructions' => 'Complete the activity.',
-        'type' => 'essay',
+        'type' => $type,
+        'language' => $type === 'code' ? 'php' : null,
         'max_score' => 20,
         'is_published' => false,
     ]);
@@ -134,6 +135,43 @@ test('publishing an assignment notifies active students only', function () {
         ->assertOk();
 
     $this->assertCount(1, $studentUser->notifications);
+});
+
+test('section notifications process every active student across query batches', function () {
+    ['section' => $section, 'semester' => $semester] = createStudentNotificationFixture();
+
+    $studentUsers = collect();
+
+    foreach (range(1, 101) as $number) {
+        $studentUser = User::factory()->create(['role' => 'student']);
+        $student = Student::create([
+            'user_id' => $studentUser->id,
+            'student_no' => '2026-'.str_pad((string) $number, 5, '0', STR_PAD_LEFT),
+            'first_name' => 'Student',
+            'last_name' => (string) $number,
+            'email' => $studentUser->email,
+            'course' => 'Computer Science',
+            'year_level' => 1,
+        ]);
+        Enrollment::create([
+            'student_id' => $student->id,
+            'section_id' => $section->id,
+            'semester_id' => $semester->id,
+            'status' => 'active',
+        ]);
+        $studentUsers->push($studentUser);
+    }
+
+    app(StudentNotificationService::class)->notifySectionStudents($section->id, [
+        'type' => 'module',
+        'title' => 'New module posted',
+        'message' => 'Week 2 notes are available.',
+        'url' => '/my-sections',
+    ]);
+
+    expect($studentUsers->every(
+        fn (User $studentUser) => $studentUser->notifications()->count() === 1
+    ))->toBeTrue();
 });
 
 test('updating a published assignment notifies enrolled students', function () {
@@ -319,4 +357,116 @@ test('assignment submissions notify the section faculty and administrators', fun
         ->assertOk()
         ->assertJsonPath('unread_count', 1)
         ->assertJsonPath('data.0.title', 'Assignment submitted');
+});
+
+test('essay submissions remain pending without automatic AI dispatch', function () {
+    ['studentUser' => $studentUser, 'student' => $student, 'section' => $section] = createStudentNotificationFixture();
+    $assignment = createStudentNotificationAssignment($section);
+    $assignment->update(['is_published' => true]);
+    Queue::fake();
+
+    $this->actingAs($studentUser)
+        ->postJson(
+            route('assignments.submit.store', Crypt::encryptString((string) $assignment->id)),
+            ['content' => 'This response remains saved when AI grading is unavailable.']
+        )
+        ->assertOk()
+        ->assertJsonPath('data.status', 'pending');
+
+    $this->assertDatabaseHas('submissions', [
+        'assignment_id' => $assignment->id,
+        'student_id' => $student->id,
+        'status' => 'pending',
+    ]);
+    Queue::assertNothingPushed();
+});
+
+test('essay resubmission updates the existing record without creating a duplicate', function () {
+    ['studentUser' => $studentUser, 'section' => $section] = createStudentNotificationFixture();
+    $assignment = createStudentNotificationAssignment($section);
+    $assignment->update(['is_published' => true]);
+    Queue::fake();
+    $route = route('assignments.submit.store', Crypt::encryptString((string) $assignment->id));
+
+    $this->actingAs($studentUser)->postJson($route, [
+        'content' => 'This is the first complete essay response.',
+    ])->assertOk()->assertJsonPath('data.status', 'pending');
+
+    $this->postJson($route, [
+        'content' => 'This is the revised complete essay response.',
+    ])->assertOk()->assertJsonPath('data.status', 'pending');
+
+    expect(Submission::query()
+        ->where('assignment_id', $assignment->id)
+        ->count())->toBe(1);
+});
+
+test('code submissions remain pending without Gemini dispatch', function () {
+    ['studentUser' => $studentUser, 'student' => $student, 'section' => $section] = createStudentNotificationFixture();
+    $assignment = createStudentNotificationAssignment($section, 'code');
+    $assignment->update(['is_published' => true]);
+    Queue::fake();
+
+    $code = '<?php echo "saved";';
+
+    $this->actingAs($studentUser)
+        ->postJson(
+            route('assignments.submit.store', Crypt::encryptString((string) $assignment->id)),
+            ['content' => $code]
+        )
+        ->assertOk()
+        ->assertJsonPath('data.status', 'pending');
+
+    $this->assertDatabaseHas('submissions', [
+        'assignment_id' => $assignment->id,
+        'student_id' => $student->id,
+        'content' => $code,
+        'status' => 'pending',
+    ]);
+    Queue::assertNothingPushed();
+});
+
+test('code resubmissions update the existing record without creating a duplicate', function () {
+    ['studentUser' => $studentUser, 'section' => $section] = createStudentNotificationFixture();
+    $assignment = createStudentNotificationAssignment($section, 'code');
+    $assignment->update(['is_published' => true]);
+    Queue::fake();
+    $route = route('assignments.submit.store', Crypt::encryptString((string) $assignment->id));
+
+    $this->actingAs($studentUser)->postJson($route, [
+        'content' => '<?php echo "first";',
+    ])->assertOk()->assertJsonPath('data.status', 'pending');
+
+    $this->postJson($route, [
+        'content' => '<?php echo "revised";',
+    ])->assertOk()->assertJsonPath('data.status', 'pending');
+
+    expect(Submission::query()
+        ->where('assignment_id', $assignment->id)
+        ->count())->toBe(1);
+    $this->assertDatabaseHas('submissions', [
+        'assignment_id' => $assignment->id,
+        'content' => '<?php echo "revised";',
+    ]);
+    Queue::assertNothingPushed();
+});
+
+test('code submissions reject content above the provider safety limit', function () {
+    ['studentUser' => $studentUser, 'section' => $section] = createStudentNotificationFixture();
+    $assignment = createStudentNotificationAssignment($section, 'code');
+    $assignment->update(['is_published' => true]);
+    Queue::fake();
+
+    $this->actingAs($studentUser)
+        ->postJson(
+            route('assignments.submit.store', Crypt::encryptString((string) $assignment->id)),
+            ['content' => str_repeat('a', 65536)]
+        )
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('content');
+
+    $this->assertDatabaseMissing('submissions', [
+        'assignment_id' => $assignment->id,
+    ]);
+    Queue::assertNothingPushed();
 });

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
 import {
     Plus,
     Pencil,
@@ -10,6 +9,7 @@ import {
     ClipboardList,
     Link2,
 } from 'lucide-vue-next';
+import { computed, onMounted, ref } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -184,11 +184,13 @@ async function addItem(component: Component) {
 
     if (!form.name.trim()) {
         form.error = 'Name is required.';
+
         return;
     }
 
     if (!form.max_score || Number(form.max_score) < 1) {
         form.error = 'Max score must be at least 1.';
+
         return;
     }
 

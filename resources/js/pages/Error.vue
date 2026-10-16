@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
 import { Home, ArrowLeft, ShieldOff, SearchX, ServerCrash, WifiOff } from 'lucide-vue-next';
+import { computed } from 'vue';
 import { Button } from '@/components/ui/button';
 
 const props = defineProps<{ status: number }>();
+const goBack = (): void => window.history.back();
 
 const config = computed(() => {
     const map: Record<number, { icon: any; title: string; description: string }> = {
@@ -29,6 +30,7 @@ const config = computed(() => {
             description: 'The system is temporarily unavailable for maintenance. Please check back shortly.',
         },
     };
+
     return map[props.status] ?? {
         icon: ServerCrash,
         title: 'Unexpected Error',
@@ -81,7 +83,7 @@ const config = computed(() => {
                         Go to Dashboard
                     </Link>
                 </Button>
-                <Button variant="outline" @click="history.back()">
+                <Button variant="outline" @click="goBack">
                     <ArrowLeft class="mr-2 h-4 w-4" />
                     Go Back
                 </Button>

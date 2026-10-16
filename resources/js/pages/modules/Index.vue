@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { ref } from 'vue';
 import {
     Plus,
     Eye,
@@ -12,6 +11,7 @@ import {
     FileText,
     BookOpen,
 } from 'lucide-vue-next';
+import { ref } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

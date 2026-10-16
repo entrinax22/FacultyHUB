@@ -1089,6 +1089,8 @@ class ClassRecordController extends Controller
 
         $section = Section::query()
             ->findOrFail($sectionId);
+        $this->authorizeFacultySection($section);
+        $this->authorizeActiveEnrollment($studentId, $section->id);
 
         $component = GradingComponent::query()
             ->where('section_id', $section->id)
@@ -1206,9 +1208,11 @@ class ClassRecordController extends Controller
         // ---------------------------------------------------------
 
         $section = $this->resolveSection($validated['section_id']);
+        $this->authorizeFacultySection($section);
 
         $studentId = $this->decryptId($validated['student_id']);
         $itemId = $this->decryptId($validated['item_id']);
+        $this->authorizeActiveEnrollment($studentId, $section->id);
 
         // ---------------------------------------------------------
         // Verify the grading item belongs to this section
@@ -1433,6 +1437,28 @@ class ClassRecordController extends Controller
 
         return Section::query()
             ->findOrFail($id);
+    }
+
+    private function authorizeFacultySection(Section $section): void
+    {
+        $user = request()->user();
+
+        abort_unless(
+            ! $user?->isFaculty() || (int) $section->faculty_id === (int) $user->id,
+            403
+        );
+    }
+
+    private function authorizeActiveEnrollment(int $studentId, int $sectionId): void
+    {
+        abort_unless(
+            Enrollment::query()
+                ->where('student_id', $studentId)
+                ->where('section_id', $sectionId)
+                ->where('status', 'active')
+                ->exists(),
+            404
+        );
     }
 
     /*

@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, ref } from 'vue';
-
 import {
     Plus,
     Eye,
@@ -12,6 +10,8 @@ import {
     Clock,
     Search,
 } from 'lucide-vue-next';
+import { onMounted, ref } from 'vue';
+
 
 import BaseTable from '@/components/BaseTable.vue';
 

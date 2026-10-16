@@ -3,8 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\ResolvesStudent;
-use App\Jobs\GradeCodeJob;
-use App\Jobs\GradeEssayJob;
 use App\Models\Assignment;
 use App\Models\Enrollment;
 use App\Models\Grade;
@@ -564,7 +562,7 @@ class SubmissionController extends Controller
                 'content' =>
                     $validated['content'],
 
-                'status' => 'grading',
+                'status' => 'pending',
 
                 'submitted_at' => now(),
             ])
@@ -579,12 +577,10 @@ class SubmissionController extends Controller
                 'content' =>
                     $validated['content'],
 
-                'status' => 'grading',
+                'status' => 'pending',
 
                 'submitted_at' => now(),
             ]);
-
-        GradeEssayJob::dispatch($submission);
 
         return $submission;
     }
@@ -702,6 +698,7 @@ class SubmissionController extends Controller
                 'required',
                 'string',
                 'min:1',
+                'max:65535',
             ],
         ]);
 
@@ -710,7 +707,7 @@ class SubmissionController extends Controller
                 'content' =>
                     $validated['content'],
 
-                'status' => 'grading',
+                'status' => 'pending',
 
                 'submitted_at' => now(),
             ])
@@ -725,12 +722,10 @@ class SubmissionController extends Controller
                 'content' =>
                     $validated['content'],
 
-                'status' => 'grading',
+                'status' => 'pending',
 
                 'submitted_at' => now(),
             ]);
-
-        GradeCodeJob::dispatch($submission);
 
         return $submission;
     }

@@ -23,7 +23,9 @@ createInertiaApp({
             case name.startsWith('student/'):
                 return StudentLayout;
 
-            case name.startsWith('settings/') && page.props.auth?.role === 'student':
+            case name.startsWith('settings/') &&
+                (page.props.auth as { role?: string } | undefined)?.role ===
+                    'student':
                 return StudentLayout;
 
             case name.startsWith('settings/'):

@@ -51,7 +51,7 @@ type Section = {
     } | null;
 };
 
-const props = defineProps<{
+defineProps<{
     section: Section;
     modules: Module[];
     progress: {

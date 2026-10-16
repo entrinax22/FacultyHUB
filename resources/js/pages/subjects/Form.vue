@@ -4,10 +4,10 @@ import axios from 'axios';
 import { BookMarked } from 'lucide-vue-next';
 import { ref } from 'vue';
 
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import InputError from '@/components/InputError.vue';
 
 import {
     showApiToast,
@@ -87,7 +87,7 @@ async function submit() {
                 `/subjects/update/${props.subject.id}`,
                 form.value
             );
-        }
+        } else {
 
         /*
         |--------------------------------------------------------------------------
@@ -95,7 +95,6 @@ async function submit() {
         |--------------------------------------------------------------------------
         */
 
-        else {
             response = await axios.post(
                 '/subjects/store',
                 form.value

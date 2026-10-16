@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 
 import {
@@ -16,6 +15,7 @@ import {
     Sparkles,
     CheckCircle2,
 } from 'lucide-vue-next';
+import { computed, onMounted, onBeforeUnmount } from 'vue';
 
 import { Button } from '@/components/ui/button';
 
@@ -35,7 +35,7 @@ import { login, register } from '@/routes';
 |--------------------------------------------------------------------------
 */
 
-const props = withDefaults(
+withDefaults(
     defineProps<{
         canRegister: boolean;
     }>(),
