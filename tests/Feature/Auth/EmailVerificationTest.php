@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Auth\Events\Verified;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 use Laravel\Fortify\Features;
@@ -36,6 +37,77 @@ test('email can be verified', function () {
     $response->assertRedirect(route('dashboard', absolute: false).'?verified=1');
 });
 
+test('https email verification links work behind a trusted proxy', function () {
+    $user = User::factory()->unverified()->create();
+
+    URL::forceScheme('https');
+    URL::forceRootUrl('https://localhost');
+
+    $verificationUrl = URL::temporarySignedRoute(
+        'verification.verify',
+        now()->addMinutes(60),
+        ['id' => $user->id, 'hash' => sha1($user->email)],
+    );
+
+    expect(parse_url($verificationUrl, PHP_URL_SCHEME))->toBe('https')
+        ->and(parse_url($verificationUrl, PHP_URL_HOST))->toBe('localhost');
+
+    // The framework clears TrustProxies static state between tests.
+    TrustProxies::at('REMOTE_ADDR');
+    TrustProxies::withHeaders(
+        \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR
+            | \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST
+            | \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT
+            | \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO
+            | \Illuminate\Http\Request::HEADER_X_FORWARDED_PREFIX,
+    );
+
+    $this->actingAs($user)
+        ->withServerVariables([
+            'REMOTE_ADDR' => '127.0.0.1',
+            'HTTP_X_FORWARDED_HOST' => 'localhost',
+            'HTTP_X_FORWARDED_PROTO' => 'https',
+            'HTTP_X_FORWARDED_PORT' => '443',
+            'QUERY_STRING' => parse_url($verificationUrl, PHP_URL_QUERY),
+        ])
+        ->get($verificationUrl)
+        ->assertRedirect(route('dashboard', absolute: false).'?verified=1');
+
+    expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
+
+    URL::forceScheme(null);
+    URL::forceRootUrl(null);
+});
+
+test('tampered email verification signatures are rejected', function () {
+    $user = User::factory()->unverified()->create();
+
+    $verificationUrl = URL::temporarySignedRoute(
+        'verification.verify',
+        now()->addMinutes(60),
+        ['id' => $user->id, 'hash' => sha1($user->email)],
+    );
+
+    $tamperedUrl = preg_replace('/signature=([^&])/', 'signature=x$1', $verificationUrl);
+
+    $this->actingAs($user)->get($tamperedUrl)->assertForbidden();
+    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
+});
+
+test('email verification links cannot be used by another authenticated user', function () {
+    $owner = User::factory()->unverified()->create();
+    $otherUser = User::factory()->unverified()->create();
+
+    $verificationUrl = URL::temporarySignedRoute(
+        'verification.verify',
+        now()->addMinutes(60),
+        ['id' => $owner->id, 'hash' => sha1($owner->email)],
+    );
+
+    $this->actingAs($otherUser)->get($verificationUrl)->assertForbidden();
+    expect($owner->fresh()->hasVerifiedEmail())->toBeFalse();
+});
+
 test('email is not verified with invalid hash', function () {
     $user = User::factory()->unverified()->create();
 
@@ -47,7 +119,7 @@ test('email is not verified with invalid hash', function () {
         ['id' => $user->id, 'hash' => sha1('wrong-email')],
     );
 
-    $this->actingAs($user)->get($verificationUrl);
+    $this->actingAs($user)->get($verificationUrl)->assertForbidden();
 
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
@@ -64,7 +136,7 @@ test('email is not verified with invalid user id', function () {
         ['id' => 123, 'hash' => sha1($user->email)],
     );
 
-    $this->actingAs($user)->get($verificationUrl);
+    $this->actingAs($user)->get($verificationUrl)->assertForbidden();
 
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
