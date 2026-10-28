@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Http\Responses\GenericPasswordResetLinkRequestResponse;
+use App\Http\Responses\SuccessfulPasswordResetLinkRequestResponse;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
+use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse as SuccessfulPasswordResetLinkRequestResponseContract;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -25,6 +27,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             FailedPasswordResetLinkRequestResponse::class,
             GenericPasswordResetLinkRequestResponse::class,
+        );
+
+        $this->app->singleton(
+            SuccessfulPasswordResetLinkRequestResponseContract::class,
+            SuccessfulPasswordResetLinkRequestResponse::class,
         );
     }
 

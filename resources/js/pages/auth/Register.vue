@@ -49,7 +49,7 @@ import { store } from '@/routes/register';
                 class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base"
             >
                 Enter your student information to create your
-                Faculty-LMS student account.
+                FacultyHUB student account.
             </p>
         </div>
 

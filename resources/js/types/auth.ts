@@ -1,3 +1,5 @@
+import type { UserRole } from './navigation';
+
 export type User = {
     id: number;
     name: string;
@@ -11,7 +13,7 @@ export type User = {
 };
 
 export type Auth = {
-    role: any;
+    role: UserRole;
     user: User;
 };
 

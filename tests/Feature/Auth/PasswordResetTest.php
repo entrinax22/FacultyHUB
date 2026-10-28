@@ -5,6 +5,7 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Log;
 use Laravel\Fortify\Features;
 
 uses(RefreshDatabase::class);
@@ -153,4 +154,34 @@ test('password reset requests are throttled', function () {
 
     $this->post(route('password.email'), ['email' => 'throttle@example.com'])
         ->assertTooManyRequests();
+});
+
+test('password reset diagnostics are disabled by default', function () {
+    Log::spy();
+    Notification::fake();
+
+    $this->post(route('password.email'), ['email' => 'unknown@example.com']);
+
+    Log::shouldNotHaveReceived('info');
+});
+
+test('password reset diagnostics record only sanitized broker outcomes', function () {
+    config(['password_reset.diagnostics_enabled' => true]);
+    Log::spy();
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email]);
+    $this->post(route('password.email'), ['email' => $user->email]);
+    $this->post(route('password.email'), ['email' => 'unknown@example.com']);
+
+    Log::shouldHaveReceived('info')
+        ->with('password_reset_diagnostic', \Mockery::on(fn ($context) =>
+            in_array($context['outcome'], ['sent', 'reset_throttled', 'invalid_user'], true)
+            && is_string($context['request_id'])
+            && is_bool($context['exception'])
+            && ! str_contains(json_encode($context), $user->email)
+        ))
+        ->atLeast()->once();
 });

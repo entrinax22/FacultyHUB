@@ -2,46 +2,58 @@
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 import {
-    BarChart3,
-    Users,
-    Layers,
+    ArcElement,
+    BarElement,
+    CategoryScale,
+    Chart as ChartJS,
+    Legend,
+    LinearScale,
+    Tooltip,
+} from 'chart.js';
+import {
+    AlertTriangle,
+    BookOpen,
+    CheckCircle2,
     ClipboardList,
     FileCheck,
-    BookOpen,
     GraduationCap,
+    Layers,
+    Loader2,
+    Users,
 } from 'lucide-vue-next';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { Bar } from 'vue-chartjs';
 import { Badge } from '@/components/ui/badge';
-import {
-    showApiError,
-} from '@/lib/flashToast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAppearance } from '@/composables/useAppearance';
+import { showApiError } from '@/lib/flashToast';
 
-type EnrollmentStat = {
-    label: string;
-    sections: number;
-    enrollments: number;
+ChartJS.register(
+    ArcElement,
+    BarElement,
+    CategoryScale,
+    Legend,
+    LinearScale,
+    Tooltip,
+);
+type EnrollmentStat = { label: string; sections: number; enrollments: number };
+type AssignmentStat = {
+    id: string;
+    title: string;
+    submitted: number;
+    expected: number;
+    completion_rate: number | null;
 };
-
-type SubmissionRate = {
-    type: string;
-    assignments: number;
-    submissions: number;
-};
-
-type GradeDist = {
-    label: string;
-    count: number;
-};
-
+type GradeStat = { label: string; count: number };
 type TopSection = {
     id: string;
     name: string;
     subject: string | null;
-    faculty: string | null;
     semester: string | null;
     enrollments: number;
 };
-
+type Insight = { type: 'warning' | 'error'; title: string; detail: string };
 type Totals = {
     users: number;
     sections: number;
@@ -51,37 +63,231 @@ type Totals = {
     submissions: number;
     graded: number;
 };
-
-type ReportsResponse = {
-    success: boolean;
-    message: string;
-    data: {
-        enrollmentBySemester: EnrollmentStat[];
-        submissionRates: SubmissionRate[];
-        gradeDistribution: GradeDist[];
-        topSections: TopSection[];
-        totals: Totals;
-    };
+type ReportsData = {
+    semesters?: { id: string; label: string }[];
+    enrollmentBySemester: EnrollmentStat[];
+    assignmentAnalysis: AssignmentStat[];
+    gradeDistribution: GradeStat[];
+    topSections: TopSection[];
+    insights: Insight[];
+    totals: Totals;
 };
+type ReportsResponse = { success: boolean; message: string; data: ReportsData };
 
+const emptyData = (): ReportsData => ({
+    semesters: [],
+    enrollmentBySemester: [],
+    assignmentAnalysis: [],
+    gradeDistribution: [],
+    topSections: [],
+    insights: [],
+    totals: {
+        users: 0,
+        sections: 0,
+        enrollments: 0,
+        modules: 0,
+        assignments: 0,
+        submissions: 0,
+        graded: 0,
+    },
+});
+const data = ref<ReportsData>(emptyData());
 const loading = ref(false);
 const error = ref<string | null>(null);
+const filterError = ref<string | null>(null);
+const semesterId = ref('');
+const dateFrom = ref('');
+const dateTo = ref('');
+const { resolvedAppearance } = useAppearance();
+const colors = computed(() =>
+    resolvedAppearance.value === 'dark'
+        ? {
+              text: '#d1fae5',
+              grid: 'rgba(167,243,208,.16)',
+              green: '#34d399',
+              blue: '#60a5fa',
+              amber: '#fbbf24',
+              red: '#f87171',
+          }
+        : {
+              text: '#374151',
+              grid: 'rgba(17,24,39,.10)',
+              green: '#15803d',
+              blue: '#2563eb',
+              amber: '#d97706',
+              red: '#dc2626',
+          },
+);
+const chartOptions = computed(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    plugins: {
+        legend: {
+            labels: {
+                color: colors.value.text,
+                usePointStyle: true,
+                boxWidth: 8,
+            },
+        },
+        tooltip: { intersect: false, mode: 'index' as const },
+    },
+    scales: {
+        x: {
+            ticks: {
+                color: colors.value.text,
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 8,
+            },
+            grid: { color: colors.value.grid },
+        },
+        y: {
+            beginAtZero: true,
+            ticks: { color: colors.value.text, precision: 0 },
+            grid: { color: colors.value.grid },
+        },
+    },
+}));
+const horizontalOptions = computed(() => ({
+    ...chartOptions.value,
+    indexAxis: 'y' as const,
+}));
+const enrollmentChart = computed(() => ({
+    labels: data.value.enrollmentBySemester.map((item) => item.label),
+    datasets: [
+        {
+            label: 'Enrollments',
+            data: data.value.enrollmentBySemester.map(
+                (item) => item.enrollments,
+            ),
+            backgroundColor: colors.value.green,
+            borderRadius: 4,
+            barPercentage: 0.65,
+        },
+    ],
+}));
+const gradeLabels = ['90–100', '80–89', '75–79', '60–74', 'Below 60'];
+const gradeChart = computed(() => ({
+    labels: gradeLabels,
+    datasets: [
+        {
+            label: 'Released grades',
+            data: gradeLabels.map(
+                (label) =>
+                    data.value.gradeDistribution.find(
+                        (item) => item.label === label,
+                    )?.count ?? 0,
+            ),
+            backgroundColor: colors.value.green,
+            borderRadius: 4,
+            barPercentage: 0.65,
+        },
+    ],
+}));
+const assignmentChart = computed(() => ({
+    labels: data.value.assignmentAnalysis.map((item) => item.title),
+    datasets: [
+        {
+            label: 'Submitted',
+            data: data.value.assignmentAnalysis.map((item) => item.submitted),
+            backgroundColor: colors.value.blue,
+            borderRadius: 4,
+            barPercentage: 0.65,
+        },
+    ],
+}));
+const sectionChart = computed(() => ({
+    labels: data.value.topSections.map((item) => item.name),
+    datasets: [
+        {
+            label: 'Active enrollments',
+            data: data.value.topSections.map((item) => item.enrollments),
+            backgroundColor: colors.value.green,
+            borderRadius: 4,
+            barPercentage: 0.65,
+        },
+    ],
+}));
+async function loadReports() {
+    if (loading.value) {
+        return;
+    }
 
-const enrollmentBySemester = ref<EnrollmentStat[]>([]);
-const submissionRates = ref<SubmissionRate[]>([]);
-const gradeDistribution = ref<GradeDist[]>([]);
-const topSections = ref<TopSection[]>([]);
+    if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) {
+        filterError.value = 'Start date must be before or equal to end date.';
 
-const totals = ref<Totals>({
-    users: 0,
-    sections: 0,
-    enrollments: 0,
-    modules: 0,
-    assignments: 0,
-    submissions: 0,
-    graded: 0,
+        return;
+    }
+
+    if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+
+        for (const [key, value] of Object.entries({
+            semester_id: semesterId.value,
+            date_from: dateFrom.value,
+            date_to: dateTo.value,
+        })) {
+            if (value) {
+                url.searchParams.set(key, value);
+            } else {
+                url.searchParams.delete(key);
+            }
+        }
+
+        window.history.replaceState({}, '', url);
+    }
+
+    loading.value = true;
+    error.value = null;
+    filterError.value = null;
+
+    try {
+        const response = await axios.get<ReportsResponse>(
+            '/admin/reports/data',
+            {
+                params: {
+                    semester_id: semesterId.value || undefined,
+                    date_from: dateFrom.value || undefined,
+                    date_to: dateTo.value || undefined,
+                },
+            },
+        );
+
+        if (!response.data.success) {
+            throw new Error(response.data.message);
+        }
+
+        data.value = response.data.data ?? emptyData();
+    } catch (err: any) {
+        error.value =
+            err.response?.data?.message ||
+            err.message ||
+            'Failed to load reports.';
+        showApiError(err);
+    } finally {
+        loading.value = false;
+    }
+}
+function resetFilters() {
+    semesterId.value = '';
+    dateFrom.value = '';
+    dateTo.value = '';
+    loadReports();
+}
+function formatRate(value: number | null) {
+    return value === null ? 'No denominator' : `${value}%`;
+}
+onMounted(() => {
+    if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        semesterId.value = params.get('semester_id') ?? '';
+        dateFrom.value = params.get('date_from') ?? '';
+        dateTo.value = params.get('date_to') ?? '';
+    }
+
+    loadReports();
 });
-
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -90,549 +296,335 @@ defineOptions({
         ],
     },
 });
-
-const typeLabels: Record<string, string> = {
-    essay: 'Essay',
-    mcq: 'Multiple Choice',
-    code: 'Code Assignment',
-};
-
-const gradeOrder = [
-    '90–100',
-    '80–89',
-    '75–79',
-    '60–74',
-    'Below 60',
-];
-
-const gradeColors: Record<string, string> = {
-    '90–100': 'bg-green-500',
-    '80–89': 'bg-blue-500',
-    '75–79': 'bg-yellow-500',
-    '60–74': 'bg-orange-500',
-    'Below 60': 'bg-red-500',
-};
-
-function maxEnrollment(stats: EnrollmentStat[]): number {
-    return Math.max(
-        ...stats.map((s) => s.enrollments),
-        1,
-    );
-}
-
-function gradeCount(label: string): number {
-    return (
-        gradeDistribution.value.find(
-            (grade) => grade.label === label,
-        )?.count ?? 0
-    );
-}
-
-function maxGradeCount(): number {
-    return Math.max(
-        ...gradeDistribution.value.map(
-            (grade) => grade.count,
-        ),
-        1,
-    );
-}
-
-function submissionPercentage(row: SubmissionRate): number {
-    if (row.assignments <= 0) {
-        return 0;
-    }
-
-    return Math.min(
-        (row.submissions / row.assignments) * 100,
-        100,
-    );
-}
-
-async function loadReports() {
-    loading.value = true;
-    error.value = null;
-
-    try {
-        const response = await axios.get<ReportsResponse>(
-            '/admin/reports/data',
-        );
-
-        if (!response.data.success) {
-            error.value =
-                response.data.message ||
-                'Failed to load reports.';
-
-            return;
-        }
-
-        const data = response.data.data;
-
-        enrollmentBySemester.value =
-            data.enrollmentBySemester ?? [];
-
-        submissionRates.value =
-            data.submissionRates ?? [];
-
-        gradeDistribution.value =
-            data.gradeDistribution ?? [];
-
-        topSections.value =
-            data.topSections ?? [];
-
-        totals.value = {
-            users: data.totals?.users ?? 0,
-            sections: data.totals?.sections ?? 0,
-            enrollments: data.totals?.enrollments ?? 0,
-            modules: data.totals?.modules ?? 0,
-            assignments: data.totals?.assignments ?? 0,
-            submissions: data.totals?.submissions ?? 0,
-            graded: data.totals?.graded ?? 0,
-        };
-    } catch (err: any) {
-        console.error('REPORTS ERROR:', err);
-
-        error.value =
-            err.response?.data?.message ||
-            'Failed to load reports.';
-
-        showApiError(err);
-    } finally {
-        loading.value = false;
-    }
-}
-
-onMounted(() => {
-    loadReports();
-});
 </script>
 
 <template>
-    <Head title="Reports" />
-
+    <Head title="System Reports" />
     <div
-        class="flex h-full flex-1 flex-col gap-4 p-3 sm:gap-6 sm:p-4 lg:p-6"
+        class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-
-        <!-- Header -->
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div class="flex min-w-0 items-center gap-3">
+        <div
+            class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+        >
+            <div class="flex items-start gap-3">
                 <div
-                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
+                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10"
                 >
-                    <BarChart3 class="h-5 w-5 text-primary" />
+                    <ClipboardList class="h-5 w-5 text-primary" />
                 </div>
-
-                <div class="min-w-0">
+                <div>
                     <h1 class="text-xl font-semibold sm:text-2xl">
                         System Reports
                     </h1>
-
                     <p class="text-xs text-muted-foreground sm:text-sm">
-                        Overview of platform usage and academic data
+                        Analyze academic performance, enrollment, submissions,
+                        and platform activity.
                     </p>
                 </div>
             </div>
         </div>
-
-        <!-- Loading -->
+        <Card class="border-primary/20 bg-primary/[.03]"
+            ><CardContent class="p-3"
+                ><div class="flex flex-col gap-2 md:flex-row md:items-end">
+                    <label class="grid min-w-0 flex-1 gap-1 text-xs font-medium"
+                        >Semester<select
+                            v-model="semesterId"
+                            class="h-9 rounded-md border bg-background px-3 text-sm"
+                        >
+                            <option value="">All semesters</option>
+                            <option
+                                v-for="semester in data.semesters"
+                                :key="semester.id"
+                                :value="semester.id"
+                            >
+                                {{ semester.label }}
+                            </option>
+                        </select></label
+                    ><label
+                        class="grid min-w-0 flex-1 gap-1 text-xs font-medium"
+                        >Start date<input
+                            v-model="dateFrom"
+                            type="date"
+                            class="h-9 rounded-md border bg-background px-3 text-sm" /></label
+                    ><label
+                        class="grid min-w-0 flex-1 gap-1 text-xs font-medium"
+                        >End date<input
+                            v-model="dateTo"
+                            type="date"
+                            class="h-9 rounded-md border bg-background px-3 text-sm"
+                    /></label>
+                    <div class="flex gap-2">
+                        <Button
+                            size="sm"
+                            :disabled="loading"
+                            @click="loadReports"
+                            >Apply filters</Button
+                        ><Button
+                            size="sm"
+                            variant="outline"
+                            :disabled="loading"
+                            @click="resetFilters"
+                            >Reset</Button
+                        >
+                    </div>
+                </div>
+                <p v-if="filterError" class="mt-2 text-xs text-destructive">
+                    {{ filterError }}
+                </p>
+                <p
+                    v-else-if="semesterId || dateFrom || dateTo"
+                    class="mt-2 text-xs text-primary"
+                >
+                    Filtered report scope active
+                </p></CardContent
+            ></Card
+        >
         <div
             v-if="loading"
-            class="flex items-center justify-center rounded-xl border bg-card p-8"
+            class="flex items-center justify-center rounded-xl border bg-card p-10 text-sm text-muted-foreground"
         >
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                <div
-                    class="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary"
-                />
-                Loading reports...
-            </div>
+            <Loader2 class="mr-2 h-4 w-4 animate-spin" />Loading reports…
         </div>
-
-        <!-- Error -->
         <div
             v-else-if="error"
             class="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center"
         >
-            <p class="text-sm text-destructive">
-                {{ error }}
-            </p>
-
-            <button
-                type="button"
-                class="mt-3 text-sm font-medium text-primary hover:underline"
+            <p class="text-sm text-destructive">{{ error }}</p>
+            <Button
+                class="mt-3"
+                size="sm"
+                variant="outline"
                 @click="loadReports"
+                >Try again</Button
             >
-                Try again
-            </button>
         </div>
-
         <template v-else>
-
-            <!-- System Totals -->
             <div
-                class="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-7"
+                class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
             >
-                <!-- Users -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
+                <Card
+                    v-for="metric in [
+                        {
+                            label: 'Users',
+                            value: data.totals.users,
+                            icon: Users,
+                            help: 'Accounts in scope',
+                        },
+                        {
+                            label: 'Sections',
+                            value: data.totals.sections,
+                            icon: Layers,
+                            help: 'Sections in scope',
+                        },
+                        {
+                            label: 'Enrollments',
+                            value: data.totals.enrollments,
+                            icon: GraduationCap,
+                            help: 'Active enrollments',
+                        },
+                        {
+                            label: 'Modules',
+                            value: data.totals.modules,
+                            icon: BookOpen,
+                            help: 'Modules in scope',
+                        },
+                        {
+                            label: 'Assignments',
+                            value: data.totals.assignments,
+                            icon: ClipboardList,
+                            help: 'Assignments in scope',
+                        },
+                        {
+                            label: 'Submissions',
+                            value: data.totals.submissions,
+                            icon: FileCheck,
+                            help: 'Submitted records',
+                        },
+                        {
+                            label: 'Graded',
+                            value: data.totals.graded,
+                            icon: CheckCircle2,
+                            help: 'Released grades',
+                        },
+                    ]"
+                    :key="metric.label"
+                    class="min-w-0"
+                    ><CardContent class="p-3 sm:p-4"
+                        ><component
+                            :is="metric.icon"
+                            class="mb-2 h-5 w-5 text-primary"
+                        />
+                        <p class="text-xl font-bold sm:text-2xl">
+                            {{ metric.value }}
+                        </p>
+                        <p class="text-xs font-medium">{{ metric.label }}</p>
+                        <p class="mt-1 text-[10px] text-muted-foreground">
+                            {{ metric.help }}
+                        </p></CardContent
+                    ></Card
                 >
-                    <Users
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.users }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Users
-                    </p>
-                </div>
-
-                <!-- Sections -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <Layers
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.sections }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Sections
-                    </p>
-                </div>
-
-                <!-- Enrollments -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <GraduationCap
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.enrollments }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Enrollments
-                    </p>
-                </div>
-
-                <!-- Modules -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <BookOpen
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.modules }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Modules
-                    </p>
-                </div>
-
-                <!-- Assignments -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <ClipboardList
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.assignments }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Assignments
-                    </p>
-                </div>
-
-                <!-- Submissions -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <FileCheck
-                        class="mx-auto mb-1 h-5 w-5 text-primary"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.submissions }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Submissions
-                    </p>
-                </div>
-
-                <!-- Graded -->
-                <div
-                    class="rounded-xl border bg-card p-3 text-center shadow-sm sm:p-4"
-                >
-                    <FileCheck
-                        class="mx-auto mb-1 h-5 w-5 text-green-500"
-                    />
-
-                    <p class="text-xl font-bold sm:text-2xl">
-                        {{ totals.graded }}
-                    </p>
-
-                    <p class="text-xs text-muted-foreground">
-                        Graded
-                    </p>
-                </div>
             </div>
-
-            <!-- Reports Grid -->
-            <div class="grid gap-4 sm:gap-6 lg:grid-cols-2">
-
-                <!-- Enrollment by Semester -->
-                <div
-                    class="min-w-0 rounded-xl border bg-card shadow-sm"
-                >
-                    <div
-                        class="border-b px-4 py-3 text-sm font-semibold"
-                    >
-                        Enrollment by Semester
-                    </div>
-
-                    <div
-                        v-if="enrollmentBySemester.length === 0"
-                        class="p-6 text-center text-sm text-muted-foreground"
-                    >
-                        No data yet.
-                    </div>
-
-                    <div
-                        v-else
-                        class="space-y-4 p-4"
-                    >
-                        <div
-                            v-for="row in enrollmentBySemester"
-                            :key="row.label"
-                            class="space-y-1.5"
+            <div class="grid gap-4 lg:grid-cols-2">
+                <Card
+                    ><CardHeader
+                        ><CardTitle class="text-base"
+                            >Enrollment by semester</CardTitle
+                        ></CardHeader
+                    ><CardContent
+                        ><div
+                            v-if="!data.enrollmentBySemester.length"
+                            class="py-10 text-center text-sm text-muted-foreground"
                         >
-                            <div
-                                class="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between"
-                            >
-                                <span
-                                    class="max-w-full truncate font-medium sm:max-w-[60%]"
-                                >
-                                    {{ row.label }}
-                                </span>
-
-                                <span
-                                    class="text-muted-foreground"
-                                >
-                                    {{ row.enrollments }} enrolled ·
-                                    {{ row.sections }} sections
-                                </span>
-                            </div>
-
-                            <div
-                                class="h-2 w-full overflow-hidden rounded-full bg-muted"
-                            >
-                                <div
-                                    class="h-full rounded-full bg-primary transition-all"
-                                    :style="{
-                                        width: `${(row.enrollments / maxEnrollment(enrollmentBySemester)) * 100}%`,
-                                    }"
-                                />
-                            </div>
+                            No enrollment data for this scope.
                         </div>
-                    </div>
-                </div>
-
-                <!-- Grade Distribution -->
-                <div
-                    class="min-w-0 rounded-xl border bg-card shadow-sm"
-                >
-                    <div
-                        class="border-b px-4 py-3 text-sm font-semibold"
-                    >
-                        Grade Distribution (Released Grades)
-                    </div>
-
-                    <div
-                        v-if="gradeDistribution.length === 0"
-                        class="p-6 text-center text-sm text-muted-foreground"
-                    >
-                        No released grades yet.
-                    </div>
-
-                    <div
-                        v-else
-                        class="space-y-4 p-4"
-                    >
-                        <div
-                            v-for="band in gradeOrder"
-                            :key="band"
-                            class="space-y-1.5"
+                        <div v-else class="h-64">
+                            <Bar
+                                :data="enrollmentChart"
+                                :options="horizontalOptions"
+                                aria-label="Enrollment by semester horizontal bar chart"
+                            /></div></CardContent></Card
+                ><Card
+                    ><CardHeader
+                        ><CardTitle class="text-base"
+                            >Released grade distribution</CardTitle
+                        ></CardHeader
+                    ><CardContent
+                        ><div
+                            v-if="!data.gradeDistribution.length"
+                            class="py-10 text-center text-sm text-muted-foreground"
                         >
-                            <div
-                                class="flex items-center justify-between text-xs"
-                            >
-                                <span class="font-medium">
-                                    {{ band }}%
-                                </span>
-
-                                <span
-                                    class="text-muted-foreground"
-                                >
-                                    {{ gradeCount(band) }}
-                                    grades
-                                </span>
-                            </div>
-
-                            <div
-                                class="h-2 w-full overflow-hidden rounded-full bg-muted"
-                            >
-                                <div
-                                    class="h-full rounded-full transition-all"
-                                    :class="gradeColors[band]"
-                                    :style="{
-                                        width: `${(gradeCount(band) / maxGradeCount()) * 100}%`,
-                                    }"
-                                />
-                            </div>
+                            No released grades for this scope.
                         </div>
-                    </div>
-                </div>
-
-                <!-- Submission Rates -->
-                <div
-                    class="min-w-0 rounded-xl border bg-card shadow-sm"
-                >
-                    <div
-                        class="border-b px-4 py-3 text-sm font-semibold"
-                    >
-                        Assignment Submission Rates
-                    </div>
-
-                    <div
-                        v-if="submissionRates.length === 0"
-                        class="p-6 text-center text-sm text-muted-foreground"
-                    >
-                        No assignments yet.
-                    </div>
-
-                    <div
-                        v-else
-                        class="divide-y"
-                    >
-                        <div
-                            v-for="row in submissionRates"
-                            :key="row.type"
-                            class="flex items-center gap-3 px-4 py-3 sm:gap-4"
+                        <div v-else class="h-64">
+                            <Bar
+                                :data="gradeChart"
+                                :options="chartOptions"
+                                aria-label="Released grade distribution bar chart"
+                            /></div></CardContent></Card
+                ><Card
+                    ><CardHeader
+                        ><CardTitle class="text-base"
+                            >Submissions by assignment</CardTitle
+                        ></CardHeader
+                    ><CardContent
+                        ><div
+                            v-if="!data.assignmentAnalysis.length"
+                            class="py-10 text-center text-sm text-muted-foreground"
                         >
-                            <div class="min-w-0 flex-1">
-                                <p class="truncate text-sm font-medium">
-                                    {{ typeLabels[row.type] ?? row.type }}
-                                </p>
-
-                                <p class="text-xs text-muted-foreground">
-                                    {{ row.assignments }} assignments
-                                </p>
-
-                                <div
-                                    class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                            No assignment submissions for this scope.
+                        </div>
+                        <div v-else class="h-72">
+                            <Bar
+                                :data="assignmentChart"
+                                :options="horizontalOptions"
+                                aria-label="Submissions by assignment horizontal bar chart"
+                            />
+                        </div>
+                        <div
+                            v-if="data.assignmentAnalysis.length"
+                            class="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground"
+                        >
+                            <div
+                                v-for="assignment in data.assignmentAnalysis.slice(
+                                    0,
+                                    5,
+                                )"
+                                :key="assignment.id"
+                                class="flex justify-between gap-3"
+                            >
+                                <span
+                                    class="truncate"
+                                    :title="assignment.title"
+                                    >{{ assignment.title }}</span
+                                ><span class="shrink-0"
+                                    >{{ assignment.submitted }} /
+                                    {{ assignment.expected || '—' }} ·
+                                    {{
+                                        formatRate(assignment.completion_rate)
+                                    }}</span
                                 >
-                                    <div
-                                        class="h-full rounded-full bg-primary"
-                                        :style="{
-                                            width: `${submissionPercentage(row)}%`,
-                                        }"
-                                    />
+                            </div>
+                        </div></CardContent
+                    ></Card
+                ><Card
+                    ><CardHeader
+                        ><CardTitle class="text-base"
+                            >Top sections by enrollment</CardTitle
+                        ></CardHeader
+                    ><CardContent
+                        ><div
+                            v-if="!data.topSections.length"
+                            class="py-10 text-center text-sm text-muted-foreground"
+                        >
+                            No sections for this scope.
+                        </div>
+                        <div v-else class="h-72">
+                            <Bar
+                                :data="sectionChart"
+                                :options="horizontalOptions"
+                                aria-label="Top sections by enrollment horizontal bar chart"
+                            />
+                        </div>
+                        <div
+                            v-if="data.topSections.length"
+                            class="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground"
+                        >
+                            <div
+                                v-for="section in data.topSections.slice(0, 5)"
+                                :key="section.id"
+                                class="flex justify-between gap-3"
+                            >
+                                <span
+                                    class="truncate"
+                                    :title="`${section.subject ?? ''} · ${section.name}`"
+                                    >{{ section.subject ?? section.name }}</span
+                                ><span class="shrink-0">{{
+                                    section.enrollments
+                                }}</span>
+                            </div>
+                        </div></CardContent
+                    ></Card
+                >
+            </div>
+            <Card
+                ><CardHeader
+                    ><CardTitle class="text-base"
+                        >Academic insights</CardTitle
+                    ></CardHeader
+                ><CardContent
+                    ><div
+                        v-if="!data.insights.length"
+                        class="flex items-center gap-2 py-3 text-sm text-muted-foreground"
+                    >
+                        <CheckCircle2 class="h-4 w-4 text-primary" />No
+                        rule-based insights for this scope.
+                    </div>
+                    <div v-else class="grid gap-3 md:grid-cols-2">
+                        <div
+                            v-for="insight in data.insights"
+                            :key="insight.title"
+                            class="flex gap-3 rounded-lg border p-3"
+                        >
+                            <AlertTriangle
+                                class="mt-0.5 h-4 w-4 shrink-0 text-orange-500"
+                            />
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <Badge variant="secondary">{{
+                                        insight.type
+                                    }}</Badge>
+                                    <p class="text-sm font-medium">
+                                        {{ insight.title }}
+                                    </p>
                                 </div>
-                            </div>
-
-                            <div class="shrink-0 text-right">
-                                <p class="text-sm font-bold">
-                                    {{ row.submissions }}
-                                </p>
-
-                                <p class="text-xs text-muted-foreground">
-                                    submissions
+                                <p class="mt-1 text-xs text-muted-foreground">
+                                    {{ insight.detail }}
                                 </p>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Top Sections -->
-                <div
-                    class="min-w-0 rounded-xl border bg-card shadow-sm"
-                >
-                    <div
-                        class="border-b px-4 py-3 text-sm font-semibold"
-                    >
-                        Top Sections by Enrollment
-                    </div>
-
-                    <div
-                        v-if="topSections.length === 0"
-                        class="p-6 text-center text-sm text-muted-foreground"
-                    >
-                        No sections yet.
-                    </div>
-
-                    <div
-                        v-else
-                        class="divide-y"
-                    >
-                        <div
-                            v-for="(section, i) in topSections"
-                            :key="section.id"
-                            class="flex items-start gap-3 px-4 py-3 text-sm"
-                        >
-                            <!-- Rank -->
-                            <span
-                                class="mt-0.5 w-5 shrink-0 text-center text-xs font-bold text-muted-foreground"
-                            >
-                                {{ i + 1 }}
-                            </span>
-
-                            <!-- Section Info -->
-                            <div class="min-w-0 flex-1">
-                                <p class="truncate font-medium">
-                                    {{ section.subject ?? 'Unknown Subject' }}
-                                </p>
-
-                                <p
-                                    class="truncate text-xs text-muted-foreground"
-                                >
-                                    {{ section.name }}
-                                    ·
-                                    {{ section.faculty ?? 'No Faculty' }}
-                                </p>
-
-                                <p
-                                    class="mt-0.5 truncate text-xs text-muted-foreground"
-                                >
-                                    {{ section.semester ?? 'No Semester' }}
-                                </p>
-                            </div>
-
-                            <!-- Enrollment -->
-                            <Badge
-                                variant="secondary"
-                                class="shrink-0 whitespace-nowrap"
-                            >
-                                {{ section.enrollments }}
-                            </Badge>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
+                    </div></CardContent
+                ></Card
+            >
         </template>
     </div>
 </template>

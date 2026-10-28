@@ -35,7 +35,7 @@ defineProps<{ status?: string }>();
 
         <div
             v-if="status"
-            class="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700"
+            class="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
         >
             {{ status }}
         </div>

@@ -1,7 +1,9 @@
 import { createInertiaApp } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
+import AdminLayout from '@/layouts/AdminLayout.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
+import FacultyLayout from '@/layouts/FacultyLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import StudentLayout from '@/layouts/StudentLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
@@ -30,6 +32,14 @@ createInertiaApp({
 
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
+
+            case (page.props.auth as { role?: string } | undefined)?.role ===
+                'admin':
+                return AdminLayout;
+
+            case (page.props.auth as { role?: string } | undefined)?.role ===
+                'faculty':
+                return FacultyLayout;
 
             default:
                 return AppLayout;

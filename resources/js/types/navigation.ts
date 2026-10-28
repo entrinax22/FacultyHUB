@@ -12,3 +12,7 @@ export type NavItem = {
     icon?: LucideIcon;
     isActive?: boolean;
 };
+
+export type UserRole = 'admin' | 'faculty' | 'student';
+
+export type Workspace = 'administration' | 'teaching';

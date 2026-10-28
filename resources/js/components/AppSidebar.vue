@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { LayoutGrid, BookMarked, GraduationCap, CalendarDays, Layers, Users, BarChart3, Search, Bot, Home} from 'lucide-vue-next';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -14,49 +13,30 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import type { NavItem } from '@/types';
+import { useCurrentUrl } from '@/composables/useCurrentUrl';
+import {
+    administrationNavItems,
+    commonNavItems,
+    teachingNavItems,
+} from '@/config/navigation';
+import type { Auth, NavItem, Workspace } from '@/types';
 
 const page = usePage();
-const role = computed(() => (page.props.auth as any).role as string | undefined);
-
-const commonNavItems: NavItem[] = [
-    { title: 'Home', href: '/', icon: Home },
-];
-
-const facultyNavItems: NavItem[] = [
-    { title: 'Subjects',    href: '/subjects',  icon: BookMarked },
-    { title: 'Sections',    href: '/sections',  icon: Layers },
-    { title: 'Students',    href: '/students',  icon: GraduationCap },
-];
-
-const adminNavItems: NavItem[] = [
-    { title: 'Home', href: '/', icon: Home },
-    { title: 'Dashboard',   href: '/admin/dashboard',         icon: LayoutGrid },
-    { title: 'Users',       href: '/admin/users',   icon: Users },
-    { title: 'Reports',     href: '/admin/reports', icon: BarChart3 },
-    { title: 'AI Settings', href: '/admin/ai-settings', icon: Bot },
-    { title: 'Semesters',   href: '/admin/semesters', icon: CalendarDays },
-    { title: 'Subjects',    href: '/subjects',       icon: BookMarked },
-    { title: 'Sections',    href: '/sections',       icon: Layers },
-    { title: 'Students',    href: '/students',       icon: GraduationCap },
-];
-
-const studentNavItems: NavItem[] = [
-    { title: 'My Classes',        href: '/my-sections',        icon: GraduationCap },
-    { title: 'Browse Sections',   href: '/my-sections/browse', icon: Search },
-];
+const auth = computed(() => page.props.auth as Auth);
+const { currentUrl } = useCurrentUrl();
+const workspace = computed<Workspace>(() =>
+    currentUrl.value.startsWith('/admin') ? 'administration' : 'teaching',
+);
 
 const mainNavItems = computed<NavItem[]>(() => {
-    if (role.value === 'admin') {
-        return adminNavItems;
+    if (auth.value.role === 'admin') {
+        return workspace.value === 'administration'
+            ? administrationNavItems
+            : teachingNavItems;
     }
 
-    if (role.value === 'faculty') {
-        return [...commonNavItems, ...facultyNavItems];
-    }
-
-    if (role.value === 'student') {
-        return [...commonNavItems, ...studentNavItems];
+    if (auth.value.role === 'faculty') {
+        return [...commonNavItems, ...teachingNavItems];
     }
 
     return commonNavItems;
@@ -64,16 +44,16 @@ const mainNavItems = computed<NavItem[]>(() => {
 </script>
 
 <template>
-    <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader>
+    <Sidebar collapsible="icon" variant="inset" class="border-sidebar-border/70">
+        <SidebarHeader class="border-b border-sidebar-border/70 px-3 py-3">
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton
                         size="lg"
                         as-child
-                        class="bg-transparent p-0 shadow-none hover:bg-transparent hover:shadow-none group-data-[collapsible=icon]:p-0!"
+                        class="h-11 bg-transparent p-1 shadow-none hover:bg-sidebar-accent/60 hover:shadow-none group-data-[collapsible=icon]:p-0!"
                     >
-                        <Link href="/dashboard">
+                        <Link href="/dashboard" aria-label="Go to dashboard">
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>
@@ -81,11 +61,16 @@ const mainNavItems = computed<NavItem[]>(() => {
             </SidebarMenu>
         </SidebarHeader>
 
-        <SidebarContent>
-            <NavMain :items="mainNavItems" />
+        <SidebarContent class="gap-0 py-3">
+            <NavMain
+                :items="mainNavItems"
+                :label="auth.role === 'admin'
+                    ? workspace === 'administration' ? 'Administration' : 'Teaching'
+                    : 'Teaching'"
+            />
         </SidebarContent>
 
-        <SidebarFooter>
+        <SidebarFooter class="border-t border-sidebar-border/70 px-3 py-3">
             <NavUser />
         </SidebarFooter>
     </Sidebar>
