@@ -101,9 +101,15 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 
 const editingId = ref<string | null>(null);
+const profileEditingId = ref<string | null>(null);
 
 const roleForm = useForm({
     role: '',
+});
+
+const profileForm = useForm({
+    name: '',
+    email: '',
 });
 
 defineOptions({
@@ -223,6 +229,28 @@ function roleBadgeVariant(
 function openEdit(user: User) {
     editingId.value = user.id;
     roleForm.role = user.role;
+}
+
+function openProfileEdit(user: User) {
+    profileEditingId.value = user.id;
+    profileForm.name = user.name;
+    profileForm.email = user.email;
+    profileForm.clearErrors();
+}
+
+async function saveProfile(userId: string) {
+    try {
+        const response = await axios.put(`/admin/users/${userId}`, {
+            name: profileForm.name,
+            email: profileForm.email,
+        });
+
+        showApiToast(response);
+        profileEditingId.value = null;
+        await loadUsers(pagination.value?.current_page ?? 1);
+    } catch (err: any) {
+        showApiError(err);
+    }
 }
 
 /**
@@ -362,13 +390,14 @@ onMounted(() => {
 
             <!-- User -->
             <template #cell-user="{ row }">
-                <p class="font-medium">
-                    {{ row.name }}
-                </p>
-
-                <p class="text-xs text-muted-foreground">
-                    {{ row.email }}
-                </p>
+                <div v-if="profileEditingId === row.id" class="space-y-2">
+                    <Input v-model="profileForm.name" class="h-8" aria-label="Name" />
+                    <Input v-model="profileForm.email" type="email" class="h-8" aria-label="Email" />
+                </div>
+                <template v-else>
+                    <p class="font-medium">{{ row.name }}</p>
+                    <p class="text-xs text-muted-foreground">{{ row.email }}</p>
+                </template>
             </template>
 
             <!-- Role -->
@@ -456,6 +485,15 @@ onMounted(() => {
 
             <!-- Actions -->
             <template #cell-actions="{ row }">
+                <template v-if="profileEditingId === row.id">
+                    <Button size="sm" class="h-7 text-xs" :disabled="profileForm.processing" @click="saveProfile(row.id)">
+                        <CheckCircle class="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" class="h-7 text-xs" @click="profileEditingId = null">Cancel</Button>
+                </template>
+                <Button v-else size="sm" variant="ghost" class="h-7 text-xs" @click="openProfileEdit(row)">
+                    Edit
+                </Button>
                 <Button
                     size="sm"
                     variant="ghost"

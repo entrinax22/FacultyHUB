@@ -303,6 +303,10 @@ class SectionController extends Controller
                 ])
                 ->withCount('enrollments');
 
+            $scope = $request->validate([
+                'scope' => ['nullable', 'in:all,mine'],
+            ])['scope'] ?? 'all';
+
             /*
             |--------------------------------------------------------------------------
             | Faculty Restriction
@@ -314,6 +318,10 @@ class SectionController extends Controller
                     'faculty_id',
                     $request->user()->id
                 );
+            }
+
+            if ($scope === 'mine') {
+                $query->where('faculty_id', $request->user()->id);
             }
 
             /*
@@ -560,6 +568,7 @@ class SectionController extends Controller
                 ],
 
                 'filters' => [
+                    'scope' => $scope,
                     'search' =>
                         $request->get('search'),
 

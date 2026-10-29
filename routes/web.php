@@ -301,6 +301,7 @@ Route::middleware(['auth', 'verified', 'role:admin', 'admin.2fa'])->prefix('admi
 
     Route::get('/users', [AdminController::class, 'index'])->name('users');
     Route::get('/users/data', [AdminController::class, 'users'])->name('users.list');
+    Route::put('/users/{user}', [AdminController::class, 'update'])->name('users.update');
     Route::put('/users/{user}/role', [AdminController::class, 'updateRole'])->name('users.role');
 
     Route::get('reports', [AdminController::class, 'reports_index'])->name('reports');

@@ -18,6 +18,7 @@ use Inertia\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -388,6 +389,76 @@ class AdminController extends Controller
                 'message' => 'Failed to update user role.',
                 'data' => null,
             ], 500);
+        }
+    }
+
+    public function update(Request $request, string $id): JsonResponse
+    {
+        try {
+            $userId = $this->decryptUserId($id);
+
+            if ($userId === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid user ID.',
+                    'data' => null,
+                ], 400);
+            }
+
+            $validated = $request->validate([
+                'name' => ['required', 'string', 'max:255'],
+                'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($userId)],
+            ]);
+
+            $user = User::find($userId);
+
+            if (! $user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found.',
+                    'data' => null,
+                ], 404);
+            }
+
+            $user->fill($validated);
+
+            if ($user->isDirty('email')) {
+                $user->email_verified_at = null;
+            }
+
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User profile updated successfully.',
+                'data' => [
+                    'id' => Crypt::encryptString((string) $user->id),
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'created_at' => $user->created_at?->toDateString(),
+                    'email_verified_at' => $user->email_verified_at?->toDateString(),
+                ],
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update user profile.',
+                'data' => null,
+            ], 500);
+        }
+    }
+
+    private function decryptUserId(string $id): ?int
+    {
+        try {
+            return (int) Crypt::decryptString($id);
+        } catch (\Throwable) {
+            return null;
         }
     }
 
