@@ -23,6 +23,12 @@ type ProcessingStatus = {
     failed_count: number;
     progress_percentage: number;
     next_eligible_at: string | null;
+    budget_reason?:
+        | 'budget_minute_requests'
+        | 'budget_daily_requests'
+        | 'budget_daily_tokens'
+        | null;
+    budget_reset_at?: string | null;
     can_continue: boolean;
     can_retry: boolean;
     can_cancel: boolean;
@@ -185,8 +191,15 @@ onMounted(() => {
     pollingTimer = window.setInterval(() => {
         if (
             !busy.value &&
+            document.visibilityState === 'visible' &&
             status.value?.is_queued_batch &&
-            ['pending', 'processing'].includes(status.value.status)
+            ['pending', 'processing'].includes(status.value.status) &&
+            !status.value.can_resume &&
+            !(
+                status.value.error_code === 'budget_waiting' &&
+                status.value.budget_reset_at &&
+                Date.now() < Date.parse(status.value.budget_reset_at)
+            )
         ) {
             void loadStatus(true);
         }
@@ -205,11 +218,13 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     <Bot class="h-4 w-4 text-primary" />
                     <h2 class="font-semibold">AI grading</h2>
                     <Badge v-if="status" variant="outline" class="capitalize">{{
-                        status.outcome_unknown_count
-                            ? 'Outcome unknown'
-                            : preparing
-                              ? 'Preparing'
-                              : status.status
+                        status.error_code === 'budget_waiting'
+                            ? 'Waiting'
+                            : status.outcome_unknown_count
+                              ? 'Outcome unknown'
+                              : preparing
+                                ? 'Preparing'
+                                : status.status
                     }}</Badge>
                 </div>
                 <p class="text-sm text-muted-foreground">
@@ -242,11 +257,29 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     {{ status.error_message }}
                 </p>
                 <p
-                    v-if="status?.next_eligible_at"
+                    v-if="status?.next_eligible_at && !status.budget_reason"
                     class="text-xs text-muted-foreground"
                 >
                     Next eligible time:
                     {{ formatDate(status.next_eligible_at) }}
+                </p>
+                <p
+                    v-if="status?.budget_reason"
+                    class="text-xs text-muted-foreground"
+                >
+                    {{
+                        status.budget_reason === 'budget_minute_requests'
+                            ? 'Per-minute request limit reached.'
+                            : status.budget_reason === 'budget_daily_requests'
+                              ? 'Daily request limit reached.'
+                              : 'Daily estimated input token limit reached.'
+                    }}
+                    {{
+                        status.budget_reason === 'budget_minute_requests'
+                            ? 'Expected continuation:'
+                            : 'Budget window resets:'
+                    }}
+                    {{ formatDate(status.budget_reset_at ?? null) }}
                 </p>
                 <p
                     v-if="status?.can_resume"

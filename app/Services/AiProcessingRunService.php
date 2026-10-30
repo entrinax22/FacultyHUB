@@ -78,6 +78,11 @@ class AiProcessingRunService
                 }
             }
 
+            if ($run->error_code === 'budget_exhausted') {
+                $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->whereIn('error_code', ['budget_daily_requests', 'budget_daily_tokens'])
+                    ->update(['next_eligible_at' => null]);
+            }
             $run->error_code = null;
             $this->enqueueGradingRun($run);
 
@@ -117,6 +122,11 @@ class AiProcessingRunService
             if (! $run || $run->queue_generation !== $generation || ! $run->isActive()) {
                 return null;
             }
+            if ($run->error_code === 'budget_waiting' && $run->gradingSubmissions()
+                ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->where('error_code', 'budget_minute_requests')->where('next_eligible_at', '>', now())->exists()) {
+                return null;
+            }
 
             $owner = $run->owner()->firstOrFail();
             $assignment = Assignment::query()->findOrFail($run->resource_id);
@@ -149,6 +159,15 @@ class AiProcessingRunService
                 $run->update(['queue_job_id' => null]);
 
                 return;
+            }
+            if ($run->error_code === 'budget_waiting') {
+                $reset = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->where('error_code', 'budget_minute_requests')->min('next_eligible_at');
+                if ($reset) {
+                    $this->enqueueGradingRun($run, max(1, (int) ceil(now()->diffInSeconds(Carbon::parse($reset), false))));
+
+                    return;
+                }
             }
             if ($run->status === AiProcessingRun::STATUS_PROCESSING) {
                 $delay = $run->lease_expires_at
@@ -590,6 +609,12 @@ class AiProcessingRunService
         AIGraderService $ai,
         ?int $generation = null
     ): AiProcessingRun {
+        if ($generation === null && $run->error_code === 'budget_exhausted') {
+            $this->authorizeRun($owner, $run);
+            $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens'])
+                ->update(['next_eligible_at' => null]);
+        }
         $work = $this->claimNextGradingSubmission($run, $owner, $generation);
 
         if (! $work) {
@@ -611,8 +636,9 @@ class AiProcessingRunService
             + strlen($ai->toPlainText($assignment->rubric))
         ) / 4));
 
-        if (! $this->reserveGradingBudget($ai->modelUsed(), $estimatedTokens)) {
-            return $this->releaseGradingSubmissionForBudget($run, $owner, $leaseToken, $work);
+        $budget = $this->reserveGradingBudget($ai->modelUsed(), $estimatedTokens);
+        if ($budget !== null) {
+            return $this->releaseGradingSubmissionForBudget($run, $owner, $leaseToken, $work, $budget);
         }
 
         $this->markGradingAttempt($run, $owner, $leaseToken, $work);
@@ -816,6 +842,10 @@ class AiProcessingRunService
             && DB::table(config('queue.connections.database.table', 'jobs'))->where('id', $run->queue_job_id)->exists();
         $preparing = $run->queue_generation > 0 && $run->preparation_status !== AiProcessingRun::PREPARATION_PREPARED;
 
+        $budgetWork = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+            ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens'])
+            ->first(['error_code', 'next_eligible_at']);
+
         return [
             'status' => $run->status,
             'preparation_status' => $run->preparation_status,
@@ -837,7 +867,10 @@ class AiProcessingRunService
             'next_eligible_at' => $nextEligibleAt
                 ? Carbon::parse($nextEligibleAt)->toIso8601String()
                 : null,
-            'can_continue' => $run->queue_generation === 0 && $run->status === AiProcessingRun::STATUS_PENDING && $hasReadyWork,
+            'budget_reason' => $budgetWork?->error_code,
+            'budget_reset_at' => $budgetWork?->next_eligible_at?->toIso8601String(),
+            'can_continue' => $run->queue_generation === 0 && $run->status === AiProcessingRun::STATUS_PENDING
+                && ($hasReadyWork || $run->error_code === 'budget_exhausted'),
             'can_retry' => $run->status === AiProcessingRun::STATUS_FAILED
                 && $run->retry_count < $run->max_retry_attempts
                 && $hasRetryableFailure,
@@ -849,6 +882,7 @@ class AiProcessingRunService
                 'provider_request_failed' => 'The AI provider request could not be completed.',
                 'invalid_response' => 'Gemini returned an invalid grading response.',
                 'budget_exhausted' => 'The configured AI grading budget is exhausted.',
+                'budget_waiting' => 'Waiting for the per-minute AI grading request limit to reset.',
                 'cancelled' => 'This AI grading run was cancelled.',
                 'submission_changed' => 'The submission changed after processing started.',
                 'submission_deleted' => 'The submission is no longer available.',
@@ -1385,20 +1419,23 @@ class AiProcessingRunService
         AiProcessingRun $run,
         User $owner,
         string $leaseToken,
-        AiGradingRunSubmission $work
+        AiGradingRunSubmission $work,
+        array $budget
     ): AiProcessingRun {
         $this->authorizeRun($owner, $run);
 
-        return DB::transaction(function () use ($run, $leaseToken, $work) {
+        return DB::transaction(function () use ($run, $leaseToken, $work, $budget) {
             $lockedRun = $this->lockedLease($run, $leaseToken);
             $work = AiGradingRunSubmission::query()->lockForUpdate()->findOrFail($work->id);
             $work->update([
                 'status' => AiGradingRunSubmission::STATUS_PENDING,
-                'error_code' => 'budget_exhausted',
+                'error_code' => $budget['reason'],
+                'next_eligible_at' => $budget['reset_at'],
                 'lease_token' => null,
                 'lease_expires_at' => null,
             ]);
-            $lockedRun->error_code = 'budget_exhausted';
+            $lockedRun->error_code = $budget['reason'] === 'budget_minute_requests' && $lockedRun->queue_generation > 0
+                ? 'budget_waiting' : 'budget_exhausted';
             $this->releaseLease($lockedRun);
             $lockedRun->save();
 
@@ -1438,31 +1475,33 @@ class AiProcessingRunService
 
     private function reservePlagiarismBudget(string $model, int $estimatedInputTokens): bool
     {
-        return $this->reserveBudget('plagiarism', $model, $estimatedInputTokens);
+        return $this->reserveBudget('plagiarism', $model, $estimatedInputTokens) === null;
     }
 
-    private function reserveGradingBudget(string $model, int $estimatedInputTokens): bool
+    private function reserveGradingBudget(string $model, int $estimatedInputTokens): ?array
     {
         return $this->reserveBudget('grading', $model, $estimatedInputTokens);
     }
 
-    private function reserveBudget(string $category, string $model, int $estimatedInputTokens): bool
+    private function reserveBudget(string $category, string $model, int $estimatedInputTokens): ?array
     {
         $timezone = (string) config("ai_processing.{$category}_budget_timezone");
         $now = now($timezone);
         $daily = $this->budgetWindow($category, 'daily', $model, $now->copy()->startOfDay()->utc());
         $minute = $this->budgetWindow($category, 'minute', $model, $now->copy()->startOfMinute()->utc());
 
-        return DB::transaction(function () use ($category, $daily, $minute, $estimatedInputTokens) {
+        return DB::transaction(function () use ($category, $daily, $minute, $estimatedInputTokens, $now) {
             $daily = $this->lockedBudgetWindow($daily);
             $minute = $this->lockedBudgetWindow($minute);
 
-            if (
-                $daily->request_count + 1 > max(1, (int) config("ai_processing.{$category}_daily_request_budget"))
-                || $daily->estimated_input_tokens + $estimatedInputTokens > max(1, (int) config("ai_processing.{$category}_daily_input_token_budget"))
-                || $minute->request_count + 1 > max(1, (int) config("ai_processing.{$category}_requests_per_minute"))
-            ) {
-                return false;
+            if ($daily->request_count + 1 > max(1, (int) config("ai_processing.{$category}_daily_request_budget"))) {
+                return ['reason' => 'budget_daily_requests', 'reset_at' => $now->copy()->addDay()->startOfDay()->utc()];
+            }
+            if ($daily->estimated_input_tokens + $estimatedInputTokens > max(1, (int) config("ai_processing.{$category}_daily_input_token_budget"))) {
+                return ['reason' => 'budget_daily_tokens', 'reset_at' => $now->copy()->addDay()->startOfDay()->utc()];
+            }
+            if ($minute->request_count + 1 > max(1, (int) config("ai_processing.{$category}_requests_per_minute"))) {
+                return ['reason' => 'budget_minute_requests', 'reset_at' => $now->copy()->addMinute()->startOfMinute()->utc()];
             }
 
             $daily->increment('request_count');
@@ -1470,7 +1509,7 @@ class AiProcessingRunService
             $minute->increment('request_count');
             $minute->increment('estimated_input_tokens', $estimatedInputTokens);
 
-            return true;
+            return null;
         });
     }
 
