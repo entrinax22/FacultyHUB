@@ -72,6 +72,57 @@ function runOneAiGradingJob(): void
     Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'ai-grading', '--once' => true, '--sleep' => 0]);
 }
 
+test('failed submission summaries are authorized paginated and contain only safe review details', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(11);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $run->gradingSubmissions()->update(['status' => 'failed', 'error_code' => 'invalid_response']);
+    $first = $run->gradingSubmissions()->orderBy('id')->firstOrFail();
+    $first->update(['error_code' => 'outcome_unknown', 'content' => 'private submission content']);
+    $run->gradingSubmissions()->orderBy('id')->skip(1)->firstOrFail()->update(['error_code' => 'unexpected private provider error']);
+    $run->gradingSubmissions()->orderByDesc('id')->firstOrFail()->submission->delete();
+    $run->update(['status' => 'failed', 'error_code' => 'outcome_unknown']);
+
+    $response = $this->actingAs($faculty)->getJson(aiGradingPath($assignment, 'status'))
+        ->assertOk()->assertJsonPath('data.failed_count', 11)
+        ->assertJsonPath('data.failed_submissions.total', 11)
+        ->assertJsonPath('data.failed_submissions.last_page', 2)
+        ->assertJsonPath('data.retryable_count', 10)
+        ->assertJsonPath('data.failed_submissions.items.0.status', 'outcome_unknown')
+        ->assertJsonPath('data.failed_submissions.items.0.student_name', 'API Student 1')
+        ->assertJsonPath('data.failed_submissions.items.0.retryable', true)
+        ->assertJsonPath('data.failed_submissions.items.1.retryable', false);
+    expect($response->json('data.failed_submissions.items'))->toHaveCount(10)
+        ->and($response->json('data.failed_submissions.items.0.last_updated_at'))->not->toBeNull()
+        ->and(Crypt::decryptString($response->json('data.failed_submissions.items.0.submission_id')))->toBe((string) $first->submission_id)
+        ->and($response->getContent())->not->toContain('private submission content', 'unexpected private provider error');
+    $this->getJson(aiGradingPath($assignment, 'status').'?failed_page=2')->assertOk()
+        ->assertJsonCount(1, 'data.failed_submissions.items')->assertJsonPath('data.failed_submissions.page', 2)
+        ->assertJsonPath('data.failed_submissions.items.0.student_name', 'Student unavailable')
+        ->assertJsonPath('data.failed_submissions.items.0.submission_id', null);
+    $this->getJson(aiGradingPath($assignment, 'status').'?failed_page=0')->assertUnprocessable();
+    $run->update(['retry_count' => $run->max_retry_attempts]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.retryable_count', 0)->assertJsonPath('data.can_retry', false);
+    $this->actingAs(User::factory()->create(['role' => 'faculty']))->getJson(aiGradingPath($assignment, 'status'))->assertForbidden();
+    $this->actingAs(User::factory()->create(['role' => 'student']))->getJson(aiGradingPath($assignment, 'status'))->assertForbidden();
+    Http::assertNothingSent();
+});
+
+test('unknown outcomes require explicit confirmation even for individual runs', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), individualGradingPayload($assignment))->assertOk();
+    $run = AiProcessingRun::sole();
+    $run->gradingSubmissions()->update(['status' => 'failed', 'error_code' => 'outcome_unknown']);
+    $run->update(['status' => 'failed', 'error_code' => 'outcome_unknown']);
+    $this->postJson(aiGradingPath($assignment, 'retry'))->assertUnprocessable()->assertJsonValidationErrors('confirm_unknown');
+    $this->postJson(aiGradingPath($assignment, 'retry'), ['confirm_unknown' => true])->assertOk();
+    Http::assertNothingSent();
+});
+
 test('the configured supervisor queue list also processes default queue jobs', function () {
     Http::fake();
     ['assignment' => $assignment] = createAiGradingApiFixture(1);
@@ -271,7 +322,8 @@ test('one queued job prepares and grades one submission then schedules the next'
     expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1);
     runOneAiGradingJob();
     $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
-        ->assertJsonPath('data.status', 'completed')->assertJsonPath('data.completed_count', 2);
+        ->assertJsonPath('data.status', 'completed')->assertJsonPath('data.completed_count', 2)
+        ->assertJsonPath('data.monitoring_state', 'completed');
     expect(AiFeedback::count())->toBe(2)->and(Grade::count())->toBe(0);
     Http::assertSentCount(2);
 });
@@ -375,7 +427,8 @@ test('ambiguous provider failures pause the batch until an authorized retry', fu
     runOneAiGradingJob();
     $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
         ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'outcome_unknown')
-        ->assertJsonPath('data.outcome_unknown_count', 1)->assertJsonPath('data.can_retry', true);
+        ->assertJsonPath('data.outcome_unknown_count', 1)->assertJsonPath('data.can_retry', true)
+        ->assertJsonPath('data.monitoring_state', 'outcome_unknown');
     $this->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertUnprocessable();
     $this->postJson(aiGradingPath($assignment, 'start'), individualGradingPayload($assignment))->assertUnprocessable();
     $this->postJson(aiGradingPath($assignment, 'retry'))->assertUnprocessable()->assertJsonValidationErrors('confirm_unknown');
@@ -444,7 +497,60 @@ test('a missing queue job cannot be resumed while its processing lease is still 
     $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()->assertJsonPath('data.can_resume', true);
 });
 
-test('a released database job recovers after an unexpected worker exception', function () {
+test('monitoring distinguishes delayed jobs active leases and stalled queue entries without changing them', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk()
+        ->assertJsonPath('data.monitoring_state', 'preparing');
+    $run = AiProcessingRun::sole();
+    $jobId = $run->queue_job_id;
+    $run->update(['preparation_status' => 'prepared', 'error_code' => 'provider_rate_limited']);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'queued');
+    DB::table('jobs')->where('id', $jobId)->update(['available_at' => now()->addMinute()->timestamp]);
+    $response = $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.monitoring_state', 'waiting_provider')->assertJsonPath('data.can_resume', false);
+    expect($response->json('data.next_attempt_at'))->not->toBeNull()
+        ->and($response->json('data.last_activity_at'))->not->toBeNull();
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'waiting_provider');
+    expect(DB::table('jobs')->where('id', $jobId)->count())->toBe(1)->and($run->fresh()->queue_generation)->toBe(1);
+
+    $run->update(['status' => 'processing', 'lease_token' => 'expired', 'lease_expires_at' => now()->subSecond()]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'waiting_provider')->assertJsonPath('data.can_resume', false);
+
+    $run->update(['status' => 'processing', 'lease_token' => 'active', 'lease_expires_at' => now()->addMinute(), 'error_code' => null]);
+    DB::table('jobs')->where('id', $jobId)->update(['available_at' => now()->subMinute()->timestamp, 'reserved_at' => now()->timestamp]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'processing')->assertJsonPath('data.can_resume', false);
+    $run->update(['lease_expires_at' => now()->subSecond()]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'stalled')->assertJsonPath('data.can_resume', false);
+    DB::table('jobs')->where('id', $jobId)->delete();
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'stalled')->assertJsonPath('data.can_resume', true);
+    Http::assertNothingSent();
+});
+
+test('monitoring marks overdue ready and expired reserved jobs as potentially stalled', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $run = AiProcessingRun::sole();
+    DB::table('jobs')->where('id', $run->queue_job_id)->update(['available_at' => now()->subMinutes(5)->timestamp]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'stalled')->assertJsonPath('data.can_resume', false);
+    DB::table('jobs')->where('id', $run->queue_job_id)->update(['reserved_at' => now()->subMinutes(5)->timestamp]);
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.monitoring_state', 'stalled')->assertJsonPath('data.can_resume', false);
+    Http::assertNothingSent();
+});
+
+test('laravel database queue release replaces the reserved job identifier', function () {
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $run = app(AiProcessingRunService::class)->startQueuedGradingBatch($faculty, $assignment);
+    $job = \Illuminate\Support\Facades\Queue::connection('database')->pop('ai-grading');
+    expect((int) $job->getJobId())->toBe($run->queue_job_id);
+    $job->release(30);
+    $replacement = DB::table('jobs')->where('queue', 'ai-grading')->sole();
+    expect((int) $replacement->id)->not->toBe($run->queue_job_id)
+        ->and((int) $replacement->available_at)->toBeGreaterThan(now()->timestamp);
+});
+
+test('an unexpected worker exception schedules a tracked fenced retry without a database job release', function () {
     Http::fake([]);
     Http::preventStrayRequests();
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
@@ -453,24 +559,75 @@ test('a released database job recovers after an unexpected worker exception', fu
     $ai->shouldReceive('modelUsed')->andThrow(new RuntimeException('simulated worker failure'));
     app()->instance(AIGraderService::class, $ai);
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $originalId = AiProcessingRun::sole()->queue_job_id;
     runOneAiGradingJob();
 
     $run = AiProcessingRun::sole();
     expect($run->status)->toBe('processing')
         ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1)
-        ->and(DB::table('jobs')->where('id', $run->queue_job_id)->exists())->toBeFalse();
-    $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
-        ->assertJsonPath('data.stalled', true)->assertJsonPath('data.can_resume', false);
+        ->and($run->queue_job_id)->not->toBe($originalId)
+        ->and($run->queue_generation)->toBe(2)
+        ->and(DB::table('jobs')->where('id', $run->queue_job_id)->exists())->toBeTrue();
+    $response = $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.monitoring_state', 'processing')->assertJsonPath('data.can_resume', false);
+    expect($response->json('data.next_attempt_at'))->not->toBeNull();
     Http::assertNothingSent();
 
-    $run->update(['lease_expires_at' => now()->subSecond()]);
-    $run->gradingSubmissions()->update(['lease_expires_at' => now()->subSecond()]);
+    $this->travelTo($run->lease_expires_at->copy()->addSeconds(2));
     app()->forgetInstance(AIGraderService::class);
     fakeSuccessfulAiGrade();
     runOneAiGradingJob();
     expect($run->fresh()->error_code)->toBeNull();
     expect($run->fresh()->status)->toBe('completed')->and(AiFeedback::count())->toBe(1);
     Http::assertSentCount(1);
+});
+
+test('unexpected coordinator failures are bounded and remain manually recoverable', function () {
+    Http::fake([]);
+    Http::preventStrayRequests();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $ai = Mockery::mock(AIGraderService::class);
+    $ai->shouldReceive('toPlainText')->andReturn('text');
+    $ai->shouldReceive('modelUsed')->andThrow(new RuntimeException('simulated worker failure'));
+    app()->instance(AIGraderService::class, $ai);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    for ($attempt = 0; $attempt < 2; $attempt++) {
+        runOneAiGradingJob();
+        $run = AiProcessingRun::sole()->fresh();
+        if ($attempt < 1) {
+            expect(DB::table('jobs')->where('id', $run->queue_job_id)->count())->toBe(1);
+            $this->travelTo($run->lease_expires_at->copy()->addSeconds(2));
+        }
+    }
+    expect($run->error_code)->toBe('queue_failed')->and($run->queue_job_id)->toBeNull()
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
+    $this->travelTo($run->lease_expires_at->copy()->addSeconds(2));
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.can_resume', true);
+    Http::assertNothingSent();
+    app()->forgetInstance(AIGraderService::class);
+    fakeSuccessfulAiGrade();
+    $this->postJson(aiGradingPath($assignment, 'next'))->assertOk();
+    runOneAiGradingJob();
+    expect($run->fresh()->status)->toBe('completed');
+});
+
+test('a rescheduled interrupted in-flight request becomes unknown without another provider call', function () {
+    fakeSuccessfulAiGrade();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    DB::table('jobs')->where('id', $run->queue_job_id)->delete();
+    $run->update(['status' => 'processing', 'lease_token' => 'active', 'lease_expires_at' => now()->addMinute()]);
+    $run->gradingSubmissions()->update(['status' => 'processing', 'error_code' => 'provider_in_flight', 'lease_token' => 'active', 'lease_expires_at' => $run->lease_expires_at]);
+    $service->rescheduleUnexpectedGradingFailure($run->id, $run->queue_generation, 1);
+    expect(DB::table('jobs')->where('id', $run->fresh()->queue_job_id)->exists())->toBeTrue();
+    $this->travelTo($run->lease_expires_at->copy()->addSeconds(2));
+    runOneAiGradingJob();
+    expect($run->fresh()->status)->toBe('failed')
+        ->and($run->fresh()->error_code)->toBe('outcome_unknown')
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
+    Http::assertNothingSent();
 });
 
 test('budget exhaustion pauses the queued batch without contacting the provider', function () {
@@ -482,7 +639,7 @@ test('budget exhaustion pauses the queued batch without contacting the provider'
     runOneAiGradingJob();
     $response = $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
         ->assertJsonPath('data.error_code', 'budget_exhausted')->assertJsonPath('data.can_resume', true)
-        ->assertJsonPath('data.budget_reason', 'budget_daily_tokens');
+        ->assertJsonPath('data.budget_reason', 'budget_daily_tokens')->assertJsonPath('data.monitoring_state', 'paused_budget');
     expect(\Carbon\Carbon::parse($response->json('data.budget_reset_at'))->equalTo(now('America/Los_Angeles')->addDay()->startOfDay()))->toBeTrue();
     expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
     Http::assertNothingSent();
@@ -504,6 +661,7 @@ test('minute budget schedules one fenced continuation at the next window', funct
         ->and($run->gradingSubmissions()->where('status', 'pending')->sole()->attempt_count)->toBe(0);
     $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
         ->assertJsonPath('data.budget_reason', 'budget_minute_requests')
+        ->assertJsonPath('data.monitoring_state', 'waiting_minute')
         ->assertJsonPath('data.can_resume', false);
     $generation = $run->queue_generation;
     (new ProcessAiGradingRun($run->id, $generation))->handle(app(AiProcessingRunService::class), app(AIGraderService::class));

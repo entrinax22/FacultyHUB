@@ -51,13 +51,14 @@ class AiGradingController extends Controller
     public function status(Request $request, string $assignmentId, AiProcessingRunService $processing): JsonResponse
     {
         $assignment = $this->authorizedAssignment($request, $assignmentId);
+        $validated = $request->validate(['failed_page' => ['sometimes', 'integer', 'min:1', 'max:100000']]);
         $run = $this->processingRun($assignment);
 
         if (! $run) {
             return $this->failure('No AI grading run was found.', 404);
         }
 
-        return $this->success('AI grading status loaded successfully.', $processing->gradingRunStatus($run, $request->user()));
+        return $this->success('AI grading status loaded successfully.', $processing->gradingRunStatus($run, $request->user(), (int) ($validated['failed_page'] ?? 1)));
     }
 
     public function process(
@@ -120,7 +121,7 @@ class AiGradingController extends Controller
         try {
             $run = DB::transaction(function () use ($processing, $request, $run) {
                 $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
-                if ($run->queue_generation > 0 && $run->gradingSubmissions()
+                if ($run->gradingSubmissions()
                     ->where('status', 'failed')->where('error_code', 'outcome_unknown')->exists()) {
                     $request->validate(['confirm_unknown' => ['accepted']]);
                 }

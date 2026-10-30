@@ -13,15 +13,26 @@ class ProcessAiGradingRun implements ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 3;
+    // Unexpected exceptions are rescheduled transactionally by the coordinator.
+    public int $tries = 1;
 
     public int $timeout = 120;
 
-    public function __construct(public readonly int $runId, public readonly int $generation) {}
+    public int $unexpectedAttempts = 0;
+
+    public function __construct(public readonly int $runId, public readonly int $generation, int $unexpectedAttempts = 0)
+    {
+        $this->unexpectedAttempts = $unexpectedAttempts;
+    }
 
     public function handle(AiProcessingRunService $processing, AIGraderService $ai): void
     {
-        $processing->processQueuedGradingRun($this->runId, $this->generation, $ai);
+        try {
+            $processing->processQueuedGradingRun($this->runId, $this->generation, $ai);
+        } catch (\Throwable $exception) {
+            report($exception);
+            $processing->rescheduleUnexpectedGradingFailure($this->runId, $this->generation, $this->unexpectedAttempts + 1);
+        }
     }
 
     public function failed(?\Throwable $exception): void

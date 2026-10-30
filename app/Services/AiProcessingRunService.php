@@ -21,6 +21,9 @@ use Illuminate\Support\Str;
 
 class AiProcessingRunService
 {
+    private const RETRYABLE_GRADING_ERRORS = [
+        'provider_rate_limited', 'provider_unavailable', 'provider_request_failed', 'invalid_response', 'outcome_unknown',
+    ];
     public function startQueuedGradingBatch(User $owner, Assignment $assignment): AiProcessingRun
     {
         $this->ensureGradingQueueConnection();
@@ -106,12 +109,33 @@ class AiProcessingRunService
         }
     }
 
-    private function enqueueGradingRun(AiProcessingRun $run, int $delay = 0): void
+    private function enqueueGradingRun(AiProcessingRun $run, int $delay = 0, int $unexpectedAttempts = 0): void
     {
         $generation = $run->queue_generation + 1;
-        $job = new ProcessAiGradingRun($run->id, $generation);
+        $job = new ProcessAiGradingRun($run->id, $generation, $unexpectedAttempts);
         $jobId = Queue::connection('database')->laterOn('ai-grading', $delay, $job);
         $run->update(['queue_generation' => $generation, 'queue_job_id' => $jobId]);
+    }
+
+    public function rescheduleUnexpectedGradingFailure(int $runId, int $generation, int $attempts): void
+    {
+        DB::transaction(function () use ($runId, $generation, $attempts) {
+            $run = AiProcessingRun::query()->lockForUpdate()->find($runId);
+            if (! $run || $run->queue_generation !== $generation || ! $run->isActive()) {
+                return;
+            }
+
+            if ($attempts >= 2) {
+                $run->update(['queue_job_id' => null, 'error_code' => 'queue_failed']);
+
+                return;
+            }
+
+            $delay = $run->status === AiProcessingRun::STATUS_PROCESSING && $run->lease_expires_at
+                ? max(1, (int) ceil(now()->diffInSeconds($run->lease_expires_at, false)) + 1)
+                : 5;
+            $this->enqueueGradingRun($run, $delay, $attempts);
+        });
     }
 
     public function processQueuedGradingRun(int $runId, int $generation, AIGraderService $ai): void
@@ -754,13 +778,7 @@ class AiProcessingRunService
 
             $retryable = $run->gradingSubmissions()
                 ->where('status', AiGradingRunSubmission::STATUS_FAILED)
-                ->whereIn('error_code', [
-                    'provider_rate_limited',
-                    'provider_unavailable',
-                    'provider_request_failed',
-                    'invalid_response',
-                    'outcome_unknown',
-                ]);
+                ->whereIn('error_code', self::RETRYABLE_GRADING_ERRORS);
 
             if (! (clone $retryable)->exists()) {
                 throw new \InvalidArgumentException('This grading run has no recoverable failures.');
@@ -801,7 +819,7 @@ class AiProcessingRunService
         });
     }
 
-    public function gradingRunStatus(AiProcessingRun $run, User $owner): array
+    public function gradingRunStatus(AiProcessingRun $run, User $owner, int $failedPage = 1): array
     {
         $this->authorizeRun($owner, $run);
 
@@ -825,26 +843,79 @@ class AiProcessingRunService
             ->where('status', AiGradingRunSubmission::STATUS_PENDING)
             ->where(fn ($query) => $query->whereNull('next_eligible_at')->orWhere('next_eligible_at', '<=', now()))
             ->exists();
-        $hasRetryableFailure = $run->gradingSubmissions()
+        $retryableCount = $run->gradingSubmissions()
             ->where('status', AiGradingRunSubmission::STATUS_FAILED)
-            ->whereIn('error_code', [
-                'provider_rate_limited',
-                'provider_unavailable',
-                'provider_request_failed',
-                'invalid_response',
-                'outcome_unknown',
-            ])
-            ->exists();
+            ->whereIn('error_code', self::RETRYABLE_GRADING_ERRORS)
+            ->count();
 
         $unknown = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_FAILED)
             ->where('error_code', 'outcome_unknown')->count();
-        $queued = $run->queue_generation > 0 && $run->queue_job_id !== null
-            && DB::table(config('queue.connections.database.table', 'jobs'))->where('id', $run->queue_job_id)->exists();
+        $job = $run->queue_generation > 0 && $run->queue_job_id !== null
+            ? DB::table(config('queue.connections.database.table', 'jobs'))->where('id', $run->queue_job_id)
+                ->first(['available_at', 'reserved_at', 'created_at'])
+            : null;
+        $queued = $job !== null;
         $preparing = $run->queue_generation > 0 && $run->preparation_status !== AiProcessingRun::PREPARATION_PREPARED;
 
         $budgetWork = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
             ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens'])
             ->first(['error_code', 'next_eligible_at']);
+
+        $nowTimestamp = now()->timestamp;
+        $delayed = $job && $job->reserved_at === null && $job->available_at > $nowTimestamp;
+        $activeLease = $run->status === AiProcessingRun::STATUS_PROCESSING && $run->lease_expires_at && ! $run->isLeaseExpired();
+        $overdue = $job && ! $delayed && ($job->reserved_at !== null
+            ? $job->reserved_at + (int) config('queue.connections.database.retry_after') < $nowTimestamp
+            : $job->available_at + (int) config('ai_processing.grading_queue_lease_seconds') < $nowTimestamp);
+        $possiblyStalled = $run->queue_generation > 0 && $run->isActive() && ! $activeLease && ! $delayed
+            && (! $job || $overdue || $run->status === AiProcessingRun::STATUS_PROCESSING);
+        $monitoringState = match (true) {
+            $unknown > 0 => 'outcome_unknown',
+            $run->status === AiProcessingRun::STATUS_COMPLETED => 'completed',
+            ! $run->isActive() => 'failed',
+            $run->error_code === 'budget_exhausted' && $budgetWork?->error_code === 'budget_minute_requests' => 'waiting_minute',
+            $run->error_code === 'budget_exhausted' => 'paused_budget',
+            $activeLease => 'processing',
+            $possiblyStalled => 'stalled',
+            $run->error_code === 'budget_waiting' && $queued => 'waiting_minute',
+            $run->error_code === 'provider_rate_limited' && $delayed => 'waiting_provider',
+            $preparing => 'preparing',
+            $run->queue_generation > 0 && $queued => 'queued',
+            default => 'pending',
+        };
+        $activityTimestamp = max($run->updated_at?->timestamp ?? 0, (int) ($job->created_at ?? 0), (int) ($job->reserved_at ?? 0));
+
+        $canRetry = $run->status === AiProcessingRun::STATUS_FAILED
+            && $run->retry_count < $run->max_retry_attempts && $retryableCount > 0;
+        $lastPage = max(1, (int) ceil($failed / 10));
+        $failedPage = min(max(1, $failedPage), $lastPage);
+        $failedSubmissions = $failed ? $run->gradingSubmissions()
+            ->where('status', AiGradingRunSubmission::STATUS_FAILED)
+            ->select(['id', 'submission_id', 'error_code', 'updated_at'])
+            ->with(['submission:id,student_id', 'submission.student:id,first_name,last_name'])
+            ->orderBy('id')->forPage($failedPage, 10)->get()
+            ->map(function (AiGradingRunSubmission $work) use ($canRetry) {
+                $student = $work->submission?->student;
+                return [
+                    'submission_id' => $work->submission ? \Illuminate\Support\Facades\Crypt::encryptString((string) $work->submission->id) : null,
+                    'student_name' => $student ? trim($student->first_name.' '.$student->last_name) : 'Student unavailable',
+                    'status' => $work->error_code === 'outcome_unknown' ? 'outcome_unknown' : 'failed',
+                    'reason' => match ($work->error_code) {
+                        'outcome_unknown' => 'The provider outcome is unknown. Review before retrying.',
+                        'provider_rate_limited' => 'The provider rate limit or quota was reached.',
+                        'provider_unavailable' => 'The provider was unavailable.',
+                        'provider_request_failed' => 'The provider request failed.',
+                        'invalid_response' => 'The provider returned an invalid grading response.',
+                        'submission_changed' => 'The submission changed after processing started.',
+                        'submission_deleted' => 'The submission is no longer available.',
+                        'grade_protected' => 'An existing faculty decision protects this grade.',
+                        'cancelled' => 'Processing was cancelled.',
+                        default => 'AI grading could not complete for this submission.',
+                    },
+                    'last_updated_at' => $work->updated_at?->toIso8601String(),
+                    'retryable' => $canRetry && in_array($work->error_code, self::RETRYABLE_GRADING_ERRORS, true),
+                ];
+            })->values()->all() : [];
 
         return [
             'status' => $run->status,
@@ -855,12 +926,16 @@ class AiProcessingRunService
                 && ($run->status !== AiProcessingRun::STATUS_PROCESSING || $run->isLeaseExpired()),
             'stalled' => $run->queue_generation > 0 && $run->status === AiProcessingRun::STATUS_PROCESSING
                 && (! $queued || $run->isLeaseExpired()),
+            'monitoring_state' => $monitoringState,
+            'last_activity_at' => $activityTimestamp ? Carbon::createFromTimestampUTC($activityTimestamp)->toIso8601String() : null,
+            'next_attempt_at' => $delayed ? Carbon::createFromTimestampUTC((int) $job->available_at)->toIso8601String() : null,
             'outcome_unknown_count' => $unknown,
             'total_submissions' => $preparing ? 0 : $run->total_work_units,
             'pending_count' => $pending,
             'processing_count' => $processing,
             'completed_count' => $completed,
             'failed_count' => $failed,
+            'failed_submissions' => ['items' => $failedSubmissions, 'page' => $failedPage, 'last_page' => $lastPage, 'total' => $failed],
             'progress_percentage' => $preparing ? 0 : ($run->total_work_units > 0
                 ? round(($completed / $run->total_work_units) * 100, 2)
                 : 100),
@@ -871,9 +946,8 @@ class AiProcessingRunService
             'budget_reset_at' => $budgetWork?->next_eligible_at?->toIso8601String(),
             'can_continue' => $run->queue_generation === 0 && $run->status === AiProcessingRun::STATUS_PENDING
                 && ($hasReadyWork || $run->error_code === 'budget_exhausted'),
-            'can_retry' => $run->status === AiProcessingRun::STATUS_FAILED
-                && $run->retry_count < $run->max_retry_attempts
-                && $hasRetryableFailure,
+            'can_retry' => $canRetry,
+            'retryable_count' => $canRetry ? $retryableCount : 0,
             'can_cancel' => $run->isActive(),
             'error_code' => $run->error_code,
             'error_message' => match ($run->error_code) {

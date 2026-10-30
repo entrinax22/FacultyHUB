@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import {
     Bot,
@@ -12,6 +13,14 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { showApiError, showApiToast, showApiWarning } from '@/lib/flashToast';
 
 type ProcessingStatus = {
@@ -21,6 +30,19 @@ type ProcessingStatus = {
     processing_count: number;
     completed_count: number;
     failed_count: number;
+    failed_submissions: {
+        items: {
+            submission_id: string | null;
+            student_name: string;
+            status: 'failed' | 'outcome_unknown';
+            reason: string;
+            last_updated_at: string | null;
+            retryable: boolean;
+        }[];
+        page: number;
+        last_page: number;
+        total: number;
+    };
     progress_percentage: number;
     next_eligible_at: string | null;
     budget_reason?:
@@ -31,6 +53,7 @@ type ProcessingStatus = {
     budget_reset_at?: string | null;
     can_continue: boolean;
     can_retry: boolean;
+    retryable_count: number;
     can_cancel: boolean;
     error_code: string | null;
     error_message: string | null;
@@ -41,6 +64,20 @@ type ProcessingStatus = {
     can_resume?: boolean;
     stalled?: boolean;
     outcome_unknown_count?: number;
+    monitoring_state:
+        | 'preparing'
+        | 'queued'
+        | 'processing'
+        | 'waiting_minute'
+        | 'waiting_provider'
+        | 'paused_budget'
+        | 'stalled'
+        | 'outcome_unknown'
+        | 'completed'
+        | 'failed'
+        | 'pending';
+    last_activity_at: string | null;
+    next_attempt_at: string | null;
 };
 
 type ApiResponse = {
@@ -59,6 +96,8 @@ const emit = defineEmits<{ changed: [] }>();
 const status = ref<ProcessingStatus | null>(null);
 const loading = ref(true);
 const busy = ref(false);
+const retryDialogOpen = ref(false);
+const failedPage = ref(1);
 const endpoint = (action: string) =>
     `/assignments/${props.assignmentId}/ai-grading/${action}`;
 const startLabel = computed(() =>
@@ -77,9 +116,23 @@ const preparing = computed(
         ['pending', 'processing'].includes(status.value.status) &&
         status.value.preparation_status !== 'prepared',
 );
+const monitoringLabels: Record<ProcessingStatus['monitoring_state'], string> = {
+    preparing: 'Preparing',
+    queued: 'Queued',
+    processing: 'Processing',
+    waiting_minute: 'Waiting for minute budget',
+    waiting_provider: 'Waiting for provider retry',
+    paused_budget: 'Paused by daily budget',
+    stalled: 'Possibly stalled',
+    outcome_unknown: 'Outcome unknown',
+    completed: 'Completed',
+    failed: 'Failed',
+    pending: 'Pending',
+};
 let pollingTimer: number | undefined;
 let statusRequestInFlight = false;
 let statusVersion = 0;
+let lastStalledPoll = 0;
 
 function formatDate(value: string | null): string {
     return value ? new Date(value).toLocaleString() : '';
@@ -98,7 +151,9 @@ async function loadStatus(silent = false): Promise<void> {
     }
 
     try {
-        const response = await axios.get<ApiResponse>(endpoint('status'));
+        const response = await axios.get<ApiResponse>(endpoint('status'), {
+            params: { failed_page: failedPage.value },
+        });
 
         if (requestVersion !== statusVersion) {
             return;
@@ -106,6 +161,7 @@ async function loadStatus(silent = false): Promise<void> {
 
         const previousCompleted = status.value?.completed_count;
         status.value = response.data.data;
+        failedPage.value = status.value.failed_submissions.page;
 
         if (
             previousCompleted !== undefined &&
@@ -133,6 +189,15 @@ async function loadStatus(silent = false): Promise<void> {
     }
 }
 
+async function changeFailedPage(page: number): Promise<void> {
+    if (loading.value || busy.value || statusRequestInFlight) {
+        return;
+    }
+
+    failedPage.value = page;
+    await loadStatus();
+}
+
 async function action(
     name: 'start' | 'next' | 'retry' | 'cancel',
 ): Promise<void> {
@@ -142,10 +207,7 @@ async function action(
 
     if (
         name === 'retry' &&
-        status.value?.outcome_unknown_count &&
-        !window.confirm(
-            'Review the affected submissions first. The provider may already have processed the previous request. Retry anyway?',
-        )
+        (!status.value?.can_retry || !status.value.retryable_count)
     ) {
         return;
     }
@@ -196,11 +258,23 @@ onMounted(() => {
             ['pending', 'processing'].includes(status.value.status) &&
             !status.value.can_resume &&
             !(
+                status.value.monitoring_state === 'stalled' &&
+                Date.now() - lastStalledPoll < 30000
+            ) &&
+            !(
+                status.value.next_attempt_at &&
+                Date.now() < Date.parse(status.value.next_attempt_at)
+            ) &&
+            !(
                 status.value.error_code === 'budget_waiting' &&
                 status.value.budget_reset_at &&
                 Date.now() < Date.parse(status.value.budget_reset_at)
             )
         ) {
+            if (status.value.monitoring_state === 'stalled') {
+                lastStalledPoll = Date.now();
+            }
+
             void loadStatus(true);
         }
     }, 5000);
@@ -217,14 +291,8 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                 <div class="flex flex-wrap items-center gap-2">
                     <Bot class="h-4 w-4 text-primary" />
                     <h2 class="font-semibold">AI grading</h2>
-                    <Badge v-if="status" variant="outline" class="capitalize">{{
-                        status.error_code === 'budget_waiting'
-                            ? 'Waiting'
-                            : status.outcome_unknown_count
-                              ? 'Outcome unknown'
-                              : preparing
-                                ? 'Preparing'
-                                : status.status
+                    <Badge v-if="status" variant="outline">{{
+                        monitoringLabels[status.monitoring_state]
                     }}</Badge>
                 </div>
                 <p class="text-sm text-muted-foreground">
@@ -257,11 +325,29 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     {{ status.error_message }}
                 </p>
                 <p
-                    v-if="status?.next_eligible_at && !status.budget_reason"
+                    v-if="
+                        status?.next_eligible_at &&
+                        !status.budget_reason &&
+                        !status.next_attempt_at
+                    "
                     class="text-xs text-muted-foreground"
                 >
                     Next eligible time:
                     {{ formatDate(status.next_eligible_at) }}
+                </p>
+                <p
+                    v-if="status?.next_attempt_at"
+                    class="text-xs text-muted-foreground"
+                >
+                    Next scheduled attempt:
+                    {{ formatDate(status.next_attempt_at) }}
+                </p>
+                <p
+                    v-if="status?.last_activity_at"
+                    class="text-xs text-muted-foreground"
+                >
+                    Last recorded activity:
+                    {{ formatDate(status.last_activity_at) }}
                 </p>
                 <p
                     v-if="status?.budget_reason"
@@ -285,18 +371,20 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     v-if="status?.can_resume"
                     class="text-xs text-amber-700 dark:text-amber-300"
                 >
-                    The batch is paused or its worker stopped. Resume when
-                    ready; a sleeping service resumes after it wakes.
+                    The batch can be resumed when ready.
                 </p>
                 <p
-                    v-else-if="status?.stalled"
+                    v-if="status?.monitoring_state === 'stalled'"
                     class="text-xs text-amber-700 dark:text-amber-300"
                 >
-                    The worker has not finished this request. Wait for the
-                    service to wake and check its status before retrying.
+                    No recent progress is visible. The service may be asleep or
+                    the worker may be delayed; its availability is not known.
                 </p>
                 <p
-                    v-else-if="status?.is_queued_batch && status.queued"
+                    v-else-if="
+                        status?.monitoring_state === 'queued' ||
+                        status?.monitoring_state === 'preparing'
+                    "
                     class="text-xs text-muted-foreground"
                 >
                     Background grading may pause while the service sleeps and
@@ -333,17 +421,19 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     }}
                 </Button>
                 <Button
-                    v-if="status?.can_retry"
+                    v-if="status && status.failed_count > 0"
                     variant="outline"
                     size="sm"
-                    :disabled="busy"
-                    @click="action('retry')"
+                    :disabled="
+                        busy ||
+                        loading ||
+                        !status.can_retry ||
+                        status.retryable_count === 0
+                    "
+                    @click="retryDialogOpen = true"
                 >
-                    <RotateCcw class="mr-1.5 h-4 w-4" />{{
-                        status?.outcome_unknown_count
-                            ? 'Review and retry'
-                            : 'Retry failed'
-                    }}
+                    <RotateCcw class="mr-1.5 h-4 w-4" />Retry eligible failures
+                    ({{ status.retryable_count }})
                 </Button>
                 <Button
                     v-if="status?.can_cancel"
@@ -389,6 +479,150 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                 <span>Processing: {{ status.processing_count }}</span>
                 <span>Failed: {{ status.failed_count }}</span>
             </div>
+            <p
+                v-if="status.pending_count > 0"
+                class="text-xs text-muted-foreground"
+            >
+                Pending submissions are waiting for processing.
+            </p>
         </div>
+        <section
+            v-if="status && status.failed_count > 0"
+            class="mt-5 border-t pt-4"
+            aria-labelledby="failed-submissions-heading"
+        >
+            <h3 id="failed-submissions-heading" class="font-semibold">
+                Failed submissions
+            </h3>
+            <p class="mt-1 text-sm text-muted-foreground">
+                Failed submissions may be eligible for retry. Outcome unknown
+                requires manual review and confirmation. Review is separate from
+                retrying all eligible failures in this run.
+            </p>
+            <ul class="mt-3 divide-y">
+                <li
+                    v-for="(failure, index) in status.failed_submissions.items"
+                    :key="failure.submission_id ?? index"
+                    class="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                    <div class="min-w-0 space-y-1 text-sm">
+                        <p class="font-medium">
+                            {{ failure.student_name }}
+                            <Badge variant="outline">{{
+                                failure.status === 'outcome_unknown'
+                                    ? 'Outcome unknown'
+                                    : 'Failed'
+                            }}</Badge>
+                            <Badge v-if="failure.retryable" variant="outline"
+                                >Retry available</Badge
+                            >
+                        </p>
+                        <p class="text-muted-foreground">
+                            {{ failure.reason }}
+                        </p>
+                        <p
+                            v-if="failure.last_updated_at"
+                            class="text-xs text-muted-foreground"
+                        >
+                            Last updated:
+                            {{ formatDate(failure.last_updated_at) }}
+                        </p>
+                    </div>
+                    <Button
+                        v-if="failure.submission_id"
+                        as-child
+                        variant="outline"
+                        size="sm"
+                        ><Link
+                            :href="`/submissions/${failure.submission_id}/grade`"
+                            :aria-label="`Review submission for ${failure.student_name}`"
+                            >Review</Link
+                        ></Button
+                    >
+                </li>
+            </ul>
+            <nav
+                v-if="status.failed_submissions.last_page > 1"
+                aria-label="Failed submissions pages"
+                class="mt-2 flex flex-wrap items-center gap-2 text-sm"
+            >
+                <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="
+                        loading || busy || status.failed_submissions.page <= 1
+                    "
+                    @click="
+                        changeFailedPage(status.failed_submissions.page - 1)
+                    "
+                    >Previous</Button
+                >
+                <span
+                    >Page {{ status.failed_submissions.page }} of
+                    {{ status.failed_submissions.last_page }}</span
+                >
+                <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="
+                        loading ||
+                        busy ||
+                        status.failed_submissions.page >=
+                            status.failed_submissions.last_page
+                    "
+                    @click="
+                        changeFailedPage(status.failed_submissions.page + 1)
+                    "
+                    >Next</Button
+                >
+            </nav>
+        </section>
+        <Dialog v-model:open="retryDialogOpen">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Retry eligible failures?</DialogTitle>
+                    <DialogDescription>
+                        This will retry
+                        {{ status?.retryable_count ?? 0 }} eligible
+                        {{
+                            status?.retryable_count === 1
+                                ? 'submission'
+                                : 'submissions'
+                        }}
+                        in this run. Retrying may process multiple submissions
+                        and incur additional AI usage.
+                    </DialogDescription>
+                </DialogHeader>
+                <p
+                    v-if="status?.outcome_unknown_count"
+                    class="text-sm text-amber-700 dark:text-amber-300"
+                >
+                    Review all outcome-unknown submissions first. The previous
+                    provider request may have completed despite the missing
+                    response; retrying may repeat it.
+                </p>
+                <DialogFooter class="gap-2">
+                    <Button
+                        variant="outline"
+                        :disabled="busy"
+                        @click="retryDialogOpen = false"
+                        >Cancel</Button
+                    >
+                    <Button
+                        :disabled="
+                            busy ||
+                            loading ||
+                            !status?.can_retry ||
+                            !status?.retryable_count
+                        "
+                        @click="
+                            retryDialogOpen = false;
+                            action('retry');
+                        "
+                        >Confirm retry</Button
+                    >
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </section>
 </template>

@@ -38,4 +38,9 @@ class AiGradingRunSubmission extends Model
     {
         return $this->belongsTo(AiProcessingRun::class, 'ai_processing_run_id');
     }
+
+    public function submission()
+    {
+        return $this->belongsTo(Submission::class);
+    }
 }
