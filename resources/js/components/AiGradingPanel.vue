@@ -64,6 +64,9 @@ type ProcessingStatus = {
     can_resume?: boolean;
     stalled?: boolean;
     outcome_unknown_count?: number;
+    pending_unknown_count: number;
+    recoverable_pending_count: number;
+    can_recover_failed_run: boolean;
     monitoring_state:
         | 'preparing'
         | 'queued'
@@ -97,6 +100,7 @@ const status = ref<ProcessingStatus | null>(null);
 const loading = ref(true);
 const busy = ref(false);
 const retryDialogOpen = ref(false);
+const recoverDialogOpen = ref(false);
 const failedPage = ref(1);
 const endpoint = (action: string) =>
     `/assignments/${props.assignmentId}/ai-grading/${action}`;
@@ -199,7 +203,7 @@ async function changeFailedPage(page: number): Promise<void> {
 }
 
 async function action(
-    name: 'start' | 'next' | 'retry' | 'cancel',
+    name: 'start' | 'next' | 'retry' | 'recover' | 'cancel',
 ): Promise<void> {
     if (busy.value) {
         return;
@@ -209,6 +213,10 @@ async function action(
         name === 'retry' &&
         (!status.value?.can_retry || !status.value.retryable_count)
     ) {
+        return;
+    }
+
+    if (name === 'recover' && !status.value?.can_recover_failed_run) {
         return;
     }
 
@@ -227,7 +235,9 @@ async function action(
                   }
                 : name === 'retry' && status.value?.outcome_unknown_count
                   ? { confirm_unknown: true }
-                  : undefined;
+                  : name === 'recover' && status.value?.pending_unknown_count
+                    ? { confirm_unknown: true }
+                    : undefined;
         const response = await axios.post<ApiResponse>(endpoint(name), payload);
         status.value = response.data.data;
 
@@ -419,6 +429,17 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                               ? 'Continue'
                               : 'Process Next'
                     }}
+                </Button>
+                <Button
+                    v-if="status?.can_recover_failed_run"
+                    size="sm"
+                    :disabled="busy || loading"
+                    @click="recoverDialogOpen = true"
+                >
+                    <RotateCcw class="mr-1.5 h-4 w-4" />Resume failed run ({{
+                        status.recoverable_pending_count
+                    }}
+                    pending)
                 </Button>
                 <Button
                     v-if="status && status.failed_count > 0"
@@ -620,6 +641,54 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                             action('retry');
                         "
                         >Confirm retry</Button
+                    >
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+        <Dialog v-model:open="recoverDialogOpen">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Resume this failed grading run?</DialogTitle>
+                    <DialogDescription>
+                        This resumes
+                        {{ status?.recoverable_pending_count ?? 0 }} pending
+                        submissions from the existing snapshots. It preserves
+                        completed results and does not create a new run.
+                        Processing may incur additional AI usage.
+                    </DialogDescription>
+                </DialogHeader>
+                <p
+                    v-if="status?.pending_unknown_count"
+                    class="text-sm text-amber-700 dark:text-amber-300"
+                >
+                    {{ status.pending_unknown_count }} pending
+                    {{
+                        status.pending_unknown_count === 1
+                            ? 'submission has'
+                            : 'submissions have'
+                    }}
+                    an unresolved or historical unknown provider outcome. A
+                    previous request may have completed even though its result
+                    was not recorded. Confirming may repeat that request and
+                    incur additional AI usage. An attempt count of zero does not
+                    establish that no provider request occurred.
+                </p>
+                <DialogFooter class="gap-2">
+                    <Button
+                        variant="outline"
+                        :disabled="busy"
+                        @click="recoverDialogOpen = false"
+                        >Cancel</Button
+                    >
+                    <Button
+                        :disabled="
+                            busy || loading || !status?.can_recover_failed_run
+                        "
+                        @click="
+                            recoverDialogOpen = false;
+                            action('recover');
+                        "
+                        >Confirm resume</Button
                     >
                 </DialogFooter>
             </DialogContent>

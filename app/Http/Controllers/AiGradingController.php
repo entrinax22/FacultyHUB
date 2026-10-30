@@ -138,6 +138,35 @@ class AiGradingController extends Controller
         }
     }
 
+    public function recover(Request $request, string $assignmentId, AiProcessingRunService $processing): JsonResponse
+    {
+        $assignment = $this->authorizedAssignment($request, $assignmentId);
+        $validated = $request->validate(['confirm_unknown' => ['sometimes', 'accepted']]);
+        $run = $this->processingRun($assignment);
+
+        if (! $run) {
+            return $this->failure('No AI grading run was found.', 404);
+        }
+
+        try {
+            $run = $processing->recoverFailedGradingRun(
+                $run,
+                $request->user(),
+                (bool) ($validated['confirm_unknown'] ?? false)
+            );
+
+            return $this->success('The existing failed grading run is queued to resume pending submissions.', $processing->gradingRunStatus($run, $request->user()));
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failure($exception->getMessage(), 422);
+        } catch (HttpExceptionInterface $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->failure('Unable to recover the failed AI grading run.', 500);
+        }
+    }
+
     public function cancel(Request $request, string $assignmentId, AiProcessingRunService $processing): JsonResponse
     {
         $assignment = $this->authorizedAssignment($request, $assignmentId);

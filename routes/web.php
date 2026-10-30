@@ -140,6 +140,7 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin', 'faculty.resource']
     Route::get('assignments/{assignmentId}/ai-grading/status', [AiGradingController::class, 'status'])->middleware('admin.2fa')->name('assignments.ai-grading.status');
     Route::post('assignments/{assignmentId}/ai-grading/next', [AiGradingController::class, 'process'])->middleware(['admin.2fa', 'throttle:ai'])->name('assignments.ai-grading.next');
     Route::post('assignments/{assignmentId}/ai-grading/retry', [AiGradingController::class, 'retry'])->middleware(['admin.2fa', 'throttle:ai'])->name('assignments.ai-grading.retry');
+    Route::post('assignments/{assignmentId}/ai-grading/recover', [AiGradingController::class, 'recover'])->middleware(['admin.2fa', 'throttle:ai'])->name('assignments.ai-grading.recover');
     Route::post('assignments/{assignmentId}/ai-grading/cancel', [AiGradingController::class, 'cancel'])->middleware('admin.2fa')->name('assignments.ai-grading.cancel');
 
     // Plagiarism

@@ -72,6 +72,71 @@ function runOneAiGradingJob(): void
     Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'ai-grading', '--once' => true, '--sleep' => 0]);
 }
 
+test('grading run recovery continues after the historical run retry count reaches its maximum', function () {
+    fakeSuccessfulAiGrade();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(39);
+    $service = app(AiProcessingRunService::class);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $run = $service->prepareGradingRun($faculty, $assignment);
+    $run->update(['retry_count' => $run->max_retry_attempts]);
+
+    runOneAiGradingJob();
+
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.total_submissions', 39)
+        ->assertJsonPath('data.completed_count', 1)->assertJsonPath('data.pending_count', 38)
+        ->assertJsonPath('data.failed_count', 0);
+    expect($run->fresh()->retry_count)->toBe(3);
+    expect($run->fresh()->queue_job_id)->not->toBeNull();
+    Http::assertSentCount(1);
+});
+
+test('coordinator exception retries stop after the bounded per-job attempts without a run retry cap', function () {
+    Http::fake([]);
+    Http::preventStrayRequests();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(39);
+    $service = app(AiProcessingRunService::class);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $run = $service->prepareGradingRun($faculty, $assignment);
+    $run->update(['status' => 'processing', 'lease_token' => 'expired', 'lease_expires_at' => now()->subSecond(), 'max_retry_attempts' => 2]);
+    $ai = Mockery::mock(AIGraderService::class);
+    $ai->shouldReceive('toPlainText')->andReturn('text');
+    $ai->shouldReceive('modelUsed')->andThrow(new RuntimeException('simulated pre-request failure'));
+    app()->instance(AIGraderService::class, $ai);
+
+    runOneAiGradingJob();
+    $run->refresh();
+    expect($run->retry_count)->toBe(1)->and($run->queue_generation)->toBe(2);
+    $this->travelTo($run->lease_expires_at->copy()->addSeconds(2));
+    runOneAiGradingJob();
+
+    $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.status', 'processing')->assertJsonPath('data.pending_count', 38)
+        ->assertJsonPath('data.processing_count', 1)->assertJsonPath('data.completed_count', 0)
+        ->assertJsonPath('data.failed_count', 0)
+        ->assertJsonPath('data.error_code', 'queue_failed');
+    expect($run->fresh()->retry_count)->toBe(2)->and($run->gradingSubmissions()->sum('attempt_count'))->toBe(0)
+        ->and($run->fresh()->queue_job_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('global expired-run recovery preserves grading work beyond the historical retry maximum', function () {
+    Http::fake([]);
+    Http::preventStrayRequests();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $run->update(['status' => 'processing', 'lease_token' => 'expired', 'lease_expires_at' => now()->subSecond(), 'retry_count' => $run->max_retry_attempts]);
+
+    expect($service->recoverExpiredRuns())->toBe(1);
+    $this->actingAs($faculty)->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.error_code', null)
+        ->assertJsonPath('data.pending_count', 2)->assertJsonPath('data.failed_count', 0);
+    expect($run->fresh()->retry_count)->toBe($run->max_retry_attempts + 1);
+    Http::assertNothingSent();
+});
+
 test('failed submission summaries are authorized paginated and contain only safe review details', function () {
     Http::fake();
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(11);
@@ -105,7 +170,7 @@ test('failed submission summaries are authorized paginated and contain only safe
     $this->getJson(aiGradingPath($assignment, 'status').'?failed_page=0')->assertUnprocessable();
     $run->update(['retry_count' => $run->max_retry_attempts]);
     $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
-        ->assertJsonPath('data.retryable_count', 0)->assertJsonPath('data.can_retry', false);
+        ->assertJsonPath('data.retryable_count', 10)->assertJsonPath('data.can_retry', true);
     $this->actingAs(User::factory()->create(['role' => 'faculty']))->getJson(aiGradingPath($assignment, 'status'))->assertForbidden();
     $this->actingAs(User::factory()->create(['role' => 'student']))->getJson(aiGradingPath($assignment, 'status'))->assertForbidden();
     Http::assertNothingSent();
@@ -117,9 +182,153 @@ test('unknown outcomes require explicit confirmation even for individual runs', 
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), individualGradingPayload($assignment))->assertOk();
     $run = AiProcessingRun::sole();
     $run->gradingSubmissions()->update(['status' => 'failed', 'error_code' => 'outcome_unknown']);
-    $run->update(['status' => 'failed', 'error_code' => 'outcome_unknown']);
+    $run->update([
+        'status' => 'failed',
+        'error_code' => 'outcome_unknown',
+        'retry_count' => $run->max_retry_attempts,
+    ]);
     $this->postJson(aiGradingPath($assignment, 'retry'))->assertUnprocessable()->assertJsonValidationErrors('confirm_unknown');
     $this->postJson(aiGradingPath($assignment, 'retry'), ['confirm_unknown' => true])->assertOk();
+    expect($run->fresh()->gradingSubmissions()->sole()->error_code)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('faculty can manually retry eligible failures after more than three historical retries', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $service = app(AiProcessingRunService::class);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $run = $service->prepareGradingRun($faculty, $assignment);
+    $work = $run->gradingSubmissions()->sole();
+    $work->update(['status' => 'failed', 'error_code' => 'provider_unavailable', 'attempt_count' => 5]);
+    $run->update(['status' => 'failed', 'error_code' => 'retry_limit_reached', 'retry_count' => 12]);
+
+    $this->postJson(aiGradingPath($assignment, 'retry'))->assertOk()
+        ->assertJsonPath('data.status', 'pending');
+
+    expect($run->fresh()->retry_count)->toBe(13)
+        ->and($work->fresh()->status)->toBe('pending')
+        ->and($work->fresh()->attempt_count)->toBe(0)
+        ->and($work->fresh()->error_code)->toBeNull()
+        ->and(DB::table('jobs')->where('id', $run->fresh()->queue_job_id)->exists())->toBeTrue();
+    Http::assertNothingSent();
+});
+
+test('historical failed runs do not restart from stale coordinator delivery', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $run->update(['status' => 'failed', 'error_code' => 'retry_limit_reached']);
+    $jobCount = DB::table('jobs')->where('queue', 'ai-grading')->count();
+
+    (new ProcessAiGradingRun($run->id, $run->queue_generation))
+        ->handle($service, app(AIGraderService::class));
+
+    expect($run->fresh()->status)->toBe('failed')
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe($jobCount);
+    Http::assertNothingSent();
+});
+
+test('a failed run resumes its existing pending snapshots after explicit unknown-outcome confirmation', function () {
+    fakeSuccessfulAiGrade();
+    Http::preventStrayRequests();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(39);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $work = $run->gradingSubmissions()->orderBy('id')->firstOrFail();
+    $work->update(['error_code' => 'outcome_unknown', 'attempt_count' => 0]);
+    $run->update([
+        'status' => 'failed',
+        'error_code' => 'retry_limit_reached',
+        'retry_count' => 12,
+        'queue_generation' => 4,
+        'queue_job_id' => null,
+        'active_key' => null,
+    ]);
+    DB::table('jobs')->where('queue', 'ai-grading')->delete();
+
+    $this->actingAs($faculty)->getJson(aiGradingPath($assignment, 'status'))->assertOk()
+        ->assertJsonPath('data.can_recover_failed_run', true)
+        ->assertJsonPath('data.recoverable_pending_count', 39)
+        ->assertJsonPath('data.pending_unknown_count', 1);
+    $this->postJson(aiGradingPath($assignment, 'recover'))->assertUnprocessable()
+        ->assertJsonPath('message', 'Confirm that you reviewed pending submissions with an unknown provider outcome before resuming.');
+    expect($run->fresh()->status)->toBe('failed')
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
+
+    $this->postJson(aiGradingPath($assignment, 'recover'), ['confirm_unknown' => true])->assertOk()
+        ->assertJsonPath('data.status', 'pending')
+        ->assertJsonPath('data.pending_count', 39)
+        ->assertJsonPath('data.pending_unknown_count', 0);
+    expect($run->fresh()->id)->toBe($run->id)
+        ->and($run->fresh()->queue_generation)->toBe(5)
+        ->and($run->gradingSubmissions()->count())->toBe(39)
+        ->and($work->fresh()->status)->toBe('pending')
+        ->and($work->fresh()->attempt_count)->toBe(0)
+        ->and($work->fresh()->error_code)->toBeNull()
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1);
+
+    $this->postJson(aiGradingPath($assignment, 'recover'), ['confirm_unknown' => true])->assertOk();
+    expect($run->fresh()->queue_generation)->toBe(5)
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1);
+
+    runOneAiGradingJob();
+    expect($work->fresh()->status)->toBe('completed')
+        ->and($run->fresh()->gradingSubmissions()->count())->toBe(39)
+        ->and($run->fresh()->completed_work_units)->toBe(1);
+    Http::assertSentCount(1);
+});
+
+test('failed-run recovery preserves completed results and protects approved grades', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $works = $run->gradingSubmissions()->orderBy('id')->get();
+    $works[0]->update(['status' => 'completed', 'result' => ['score' => 18]]);
+    $works[0]->submission->update(['status' => 'graded']);
+    $approvedSubmission = $works[1]->submission;
+    $approvedSubmission->update(['status' => 'approved']);
+    Grade::create([
+        'submission_id' => $approvedSubmission->id,
+        'student_id' => $approvedSubmission->student_id,
+        'section_id' => $assignment->section_id,
+        'assignment_id' => $assignment->id,
+        'raw_score' => 17,
+        'max_score' => 20,
+    ]);
+    $run->update(['status' => 'failed', 'error_code' => 'retry_limit_reached', 'active_key' => null, 'queue_job_id' => null]);
+    DB::table('jobs')->where('queue', 'ai-grading')->delete();
+
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'recover'))->assertOk();
+    runOneAiGradingJob();
+
+    expect($works[0]->fresh()->status)->toBe('completed')
+        ->and($approvedSubmission->fresh()->status)->toBe('approved')
+        ->and($approvedSubmission->grade()->value('raw_score'))->toEqual(17)
+        ->and($works[1]->fresh()->error_code)->toBe('grade_protected')
+        ->and($run->fresh()->status)->toBe('failed')
+        ->and(AiFeedback::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('cancelled runs cannot use failed-run recovery', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    $run->update(['status' => 'failed', 'error_code' => 'cancelled', 'active_key' => null, 'queue_job_id' => null]);
+    DB::table('jobs')->where('queue', 'ai-grading')->delete();
+
+    $this->actingAs($faculty)->getJson(aiGradingPath($assignment, 'status'))->assertJsonPath('data.can_recover_failed_run', false);
+    $this->postJson(aiGradingPath($assignment, 'recover'))->assertUnprocessable()
+        ->assertJsonPath('message', 'This failed grading run is not eligible for recovery.');
+    expect($run->fresh()->status)->toBe('failed')->and(DB::table('jobs')->count())->toBe(0);
     Http::assertNothingSent();
 });
 
@@ -749,6 +958,7 @@ test('other faculty cannot resume or retry a batch they do not own', function ()
     $other = User::factory()->create(['role' => 'faculty']);
     $this->actingAs($other)->postJson(aiGradingPath($assignment, 'next'))->assertForbidden();
     $this->postJson(aiGradingPath($assignment, 'retry'))->assertForbidden();
+    $this->postJson(aiGradingPath($assignment, 'recover'))->assertForbidden();
 });
 
 test('cancelling an in-flight provider request records an unknown outcome and fences the job', function () {

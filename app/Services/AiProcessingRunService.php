@@ -310,7 +310,8 @@ class AiProcessingRunService
                 return null;
             }
 
-            if ($run->retry_count >= $run->max_retry_attempts) {
+            if ($run->processing_type !== AiProcessingRun::TYPE_GRADING
+                && $run->retry_count >= $run->max_retry_attempts) {
                 $this->failRun($run, 'retry_limit_reached');
                 $run->save();
 
@@ -378,7 +379,8 @@ class AiProcessingRunService
             $run->error_code = $this->safeErrorCode($errorCode);
             $run->retry_count = min(255, $run->retry_count + 1);
 
-            if ($run->retry_count >= $run->max_retry_attempts) {
+            if ($run->processing_type !== AiProcessingRun::TYPE_GRADING
+                && $run->retry_count >= $run->max_retry_attempts) {
                 $this->failRun($run, $run->error_code);
             } else {
                 $this->finishOrRelease($run);
@@ -413,7 +415,8 @@ class AiProcessingRunService
                         }
                     }
 
-                    if ($run->retry_count >= $run->max_retry_attempts) {
+                    if ($run->processing_type !== AiProcessingRun::TYPE_GRADING
+                        && $run->retry_count >= $run->max_retry_attempts) {
                         $this->failRun($run, 'retry_limit_reached');
                         $run->save();
                     } else {
@@ -771,7 +774,6 @@ class AiProcessingRunService
             if (
                 $run->processing_type !== AiProcessingRun::TYPE_GRADING
                 || $run->status !== AiProcessingRun::STATUS_FAILED
-                || $run->retry_count >= $run->max_retry_attempts
             ) {
                 throw new \InvalidArgumentException('This grading run cannot be retried.');
             }
@@ -797,6 +799,7 @@ class AiProcessingRunService
             $retryable->update([
                 'status' => AiGradingRunSubmission::STATUS_PENDING,
                 'attempt_count' => 0,
+                'error_code' => null,
                 'next_eligible_at' => null,
                 'lease_token' => null,
                 'lease_expires_at' => null,
@@ -807,13 +810,100 @@ class AiProcessingRunService
                 'failed_work_units' => $run->gradingSubmissions()
                     ->where('status', AiGradingRunSubmission::STATUS_FAILED)
                     ->count(),
-                'retry_count' => $run->retry_count + 1,
+                'retry_count' => min(255, $run->retry_count + 1),
                 'error_code' => null,
                 'failed_at' => null,
                 'active_key' => $activeKey,
                 'lease_token' => null,
                 'lease_expires_at' => null,
             ]);
+
+            return $run->fresh();
+        });
+    }
+
+    public function recoverFailedGradingRun(
+        AiProcessingRun $run,
+        User $owner,
+        bool $confirmUnknown = false
+    ): AiProcessingRun {
+        $this->ensureGradingQueueConnection();
+        $this->authorizeRun($owner, $run);
+
+        return DB::transaction(function () use ($run, $confirmUnknown) {
+            $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+
+            if ($run->processing_type !== AiProcessingRun::TYPE_GRADING) {
+                throw new InvalidArgumentException('Only AI grading runs can be recovered.');
+            }
+
+            if ($run->isActive()) {
+                $queued = $run->queue_job_id !== null
+                    && DB::table(config('queue.connections.database.table', 'jobs'))
+                        ->where('id', $run->queue_job_id)->exists();
+                if ($queued || ($run->status === AiProcessingRun::STATUS_PROCESSING && ! $run->isLeaseExpired())) {
+                    return $run;
+                }
+
+                throw new \InvalidArgumentException('This grading run is already active; use the existing Resume action if it becomes stalled.');
+            }
+
+            if ($run->status !== AiProcessingRun::STATUS_FAILED || $run->error_code === 'cancelled') {
+                throw new \InvalidArgumentException('This failed grading run is not eligible for recovery.');
+            }
+
+            if ($run->preparation_status !== AiProcessingRun::PREPARATION_PREPARED) {
+                throw new \InvalidArgumentException('This grading run has no complete submission snapshot to resume.');
+            }
+
+            $assignment = Assignment::query()->whereKey($run->resource_id)->lockForUpdate()->firstOrFail();
+            $pending = $run->gradingSubmissions()
+                ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->lockForUpdate()->get();
+
+            if ($pending->isEmpty()) {
+                throw new \InvalidArgumentException('This run has no pending submissions to resume. Retry eligible failed submissions separately.');
+            }
+
+            $unknownIds = $pending->filter(fn (AiGradingRunSubmission $work) =>
+                in_array($work->error_code, ['outcome_unknown', 'provider_in_flight'], true)
+            )->pluck('id');
+
+            if ($unknownIds->isNotEmpty() && ! $confirmUnknown) {
+                throw new \InvalidArgumentException('Confirm that you reviewed pending submissions with an unknown provider outcome before resuming.');
+            }
+
+            $activeKey = $this->activeKey($assignment, AiProcessingRun::TYPE_GRADING);
+            $conflict = AiProcessingRun::query()
+                ->where('active_key', $activeKey)
+                ->whereKeyNot($run->id)
+                ->exists();
+
+            if ($conflict) {
+                throw new \InvalidArgumentException('Another grading run is already active for this assignment.');
+            }
+
+            if ($unknownIds->isNotEmpty()) {
+                $run->gradingSubmissions()->whereIn('id', $unknownIds)->update([
+                    'error_code' => null,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $run->update([
+                'status' => AiProcessingRun::STATUS_PENDING,
+                'completed_work_units' => $run->gradingSubmissions()
+                    ->where('status', AiGradingRunSubmission::STATUS_COMPLETED)->count(),
+                'failed_work_units' => $run->gradingSubmissions()
+                    ->where('status', AiGradingRunSubmission::STATUS_FAILED)->count(),
+                'error_code' => null,
+                'failed_at' => null,
+                'active_key' => $activeKey,
+                'lease_token' => null,
+                'lease_expires_at' => null,
+                'queue_job_id' => null,
+            ]);
+            $this->enqueueGradingRun($run);
 
             return $run->fresh();
         });
@@ -835,6 +925,10 @@ class AiProcessingRunService
         $processing = (int) ($counts[AiGradingRunSubmission::STATUS_PROCESSING] ?? 0);
         $completed = (int) ($counts[AiGradingRunSubmission::STATUS_COMPLETED] ?? 0);
         $failed = (int) ($counts[AiGradingRunSubmission::STATUS_FAILED] ?? 0);
+        $pendingUnknown = $run->gradingSubmissions()
+            ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+            ->whereIn('error_code', ['outcome_unknown', 'provider_in_flight'])
+            ->count();
         $nextEligibleAt = $run->gradingSubmissions()
             ->where('status', AiGradingRunSubmission::STATUS_PENDING)
             ->whereNotNull('next_eligible_at')
@@ -885,8 +979,19 @@ class AiProcessingRunService
         };
         $activityTimestamp = max($run->updated_at?->timestamp ?? 0, (int) ($job->created_at ?? 0), (int) ($job->reserved_at ?? 0));
 
-        $canRetry = $run->status === AiProcessingRun::STATUS_FAILED
-            && $run->retry_count < $run->max_retry_attempts && $retryableCount > 0;
+        $activeConflict = AiProcessingRun::query()
+            ->where('resource_type', Assignment::class)
+            ->where('resource_id', $run->resource_id)
+            ->where('processing_type', AiProcessingRun::TYPE_GRADING)
+            ->whereIn('status', [AiProcessingRun::STATUS_PENDING, AiProcessingRun::STATUS_PROCESSING])
+            ->whereKeyNot($run->id)
+            ->exists();
+        $canRecoverFailedRun = $run->status === AiProcessingRun::STATUS_FAILED
+            && $run->error_code !== 'cancelled'
+            && $run->preparation_status === AiProcessingRun::PREPARATION_PREPARED
+            && $pending > 0
+            && ! $activeConflict;
+        $canRetry = $run->status === AiProcessingRun::STATUS_FAILED && $retryableCount > 0;
         $lastPage = max(1, (int) ceil($failed / 10));
         $failedPage = min(max(1, $failedPage), $lastPage);
         $failedSubmissions = $failed ? $run->gradingSubmissions()
@@ -930,6 +1035,9 @@ class AiProcessingRunService
             'last_activity_at' => $activityTimestamp ? Carbon::createFromTimestampUTC($activityTimestamp)->toIso8601String() : null,
             'next_attempt_at' => $delayed ? Carbon::createFromTimestampUTC((int) $job->available_at)->toIso8601String() : null,
             'outcome_unknown_count' => $unknown,
+            'pending_unknown_count' => $pendingUnknown,
+            'recoverable_pending_count' => $canRecoverFailedRun ? $pending : 0,
+            'can_recover_failed_run' => $canRecoverFailedRun,
             'total_submissions' => $preparing ? 0 : $run->total_work_units,
             'pending_count' => $pending,
             'processing_count' => $processing,
@@ -958,6 +1066,7 @@ class AiProcessingRunService
                 'budget_exhausted' => 'The configured AI grading budget is exhausted.',
                 'budget_waiting' => 'Waiting for the per-minute AI grading request limit to reset.',
                 'cancelled' => 'This AI grading run was cancelled.',
+                'retry_limit_reached' => 'This run stopped under a previous retry limit. Pending snapshots can be resumed; eligible failed submissions can be retried separately.',
                 'submission_changed' => 'The submission changed after processing started.',
                 'submission_deleted' => 'The submission is no longer available.',
                 'grade_protected' => 'A faculty decision protects this submission from AI changes.',
