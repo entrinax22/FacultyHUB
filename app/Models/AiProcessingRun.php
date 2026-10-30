@@ -51,6 +51,8 @@ class AiProcessingRun extends Model
         'preparation_completed_at',
         'preparation_failed_at',
         'published_at',
+        'queue_generation',
+        'queue_job_id',
     ];
 
     protected $casts = [
@@ -62,6 +64,8 @@ class AiProcessingRun extends Model
         'preparation_completed_at' => 'datetime',
         'preparation_failed_at' => 'datetime',
         'published_at' => 'datetime',
+        'queue_generation' => 'integer',
+        'queue_job_id' => 'integer',
     ];
 
     public function owner()

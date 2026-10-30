@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessAiGradingRun;
 use App\Models\AiFeedback;
 use App\Models\AiGradingRunSubmission;
 use App\Models\AiProcessingBudgetWindow;
@@ -15,10 +16,157 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 class AiProcessingRunService
 {
+    public function startQueuedGradingBatch(User $owner, Assignment $assignment): AiProcessingRun
+    {
+        $this->ensureGradingQueueConnection();
+
+        return DB::transaction(function () use ($owner, $assignment) {
+            Assignment::query()->whereKey($assignment->id)->lockForUpdate()->firstOrFail();
+            if (AiGradingRunSubmission::query()->where('status', AiGradingRunSubmission::STATUS_FAILED)
+                ->where('error_code', 'outcome_unknown')
+                ->whereHas('run', fn ($query) => $query->where('resource_type', Assignment::class)->where('resource_id', $assignment->id))
+                ->exists()) {
+                throw new \InvalidArgumentException('Review the unknown AI request outcome before starting another batch.');
+            }
+            $run = $this->startAssignmentRun($owner, $assignment, AiProcessingRun::TYPE_GRADING, 1);
+            $created = $run->wasRecentlyCreated;
+            $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+            $this->authorizeRun($owner, $run);
+
+            if (! $created) {
+                if ($run->queue_generation === 0) {
+                    throw new \InvalidArgumentException('An individual grading run is already active.');
+                }
+
+                return $run;
+            }
+
+            $this->enqueueGradingRun($run);
+
+            return $run->fresh();
+        });
+    }
+
+    public function resumeQueuedGradingRun(AiProcessingRun $run, User $owner): AiProcessingRun
+    {
+        $this->ensureGradingQueueConnection();
+        $this->authorizeRun($owner, $run);
+
+        return DB::transaction(function () use ($run) {
+            $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+            if ($run->queue_generation < 1 || ! $run->isActive()) {
+                throw new \InvalidArgumentException('This batch cannot be resumed.');
+            }
+
+            if ($run->queue_job_id && DB::table(config('queue.connections.database.table', 'jobs'))->where('id', $run->queue_job_id)->exists()) {
+                return $run;
+            }
+
+            if ($run->status === AiProcessingRun::STATUS_PROCESSING) {
+                if (! $run->isLeaseExpired()) {
+                    return $run;
+                }
+                $this->recoverExpiredGradingClaims($run, $run->queue_generation);
+                $run->refresh();
+                if (! $run->isActive()) {
+                    return $run;
+                }
+            }
+
+            $run->error_code = null;
+            $this->enqueueGradingRun($run);
+
+            return $run->fresh();
+        });
+    }
+
+    private function ensureGradingQueueConnection(): void
+    {
+        $connection = config('queue.connections.database.connection');
+        if (config('queue.default') !== 'database' || ($connection && $connection !== DB::getDefaultConnection()) || config('queue.connections.database.after_commit')) {
+            throw new \RuntimeException('AI batch grading requires the database queue on the application database connection.');
+        }
+
+        $workerTimeout = 120;
+        $lease = (int) config('ai_processing.grading_queue_lease_seconds');
+        if ((int) config('ai_processing.timeout_budget_seconds') >= $workerTimeout
+            || $lease <= $workerTimeout
+            || (int) config('queue.connections.database.retry_after') <= $lease) {
+            throw new \RuntimeException('AI grading queue timeouts are not safely aligned.');
+        }
+    }
+
+    private function enqueueGradingRun(AiProcessingRun $run, int $delay = 0): void
+    {
+        $generation = $run->queue_generation + 1;
+        $job = new ProcessAiGradingRun($run->id, $generation);
+        $jobId = Queue::connection('database')->laterOn('ai-grading', $delay, $job);
+        $run->update(['queue_generation' => $generation, 'queue_job_id' => $jobId]);
+    }
+
+    public function processQueuedGradingRun(int $runId, int $generation, AIGraderService $ai): void
+    {
+        $this->ensureGradingQueueConnection();
+        $run = DB::transaction(function () use ($runId, $generation) {
+            $run = AiProcessingRun::query()->lockForUpdate()->find($runId);
+            if (! $run || $run->queue_generation !== $generation || ! $run->isActive()) {
+                return null;
+            }
+
+            $owner = $run->owner()->firstOrFail();
+            $assignment = Assignment::query()->findOrFail($run->resource_id);
+            $this->authorizeAssignment($owner, $assignment);
+            if ($run->preparation_status !== AiProcessingRun::PREPARATION_PREPARED) {
+                $run = $this->prepareGradingRun($owner, $assignment);
+            }
+
+            if (! $run->isActive()) {
+                $run->update(['queue_job_id' => null]);
+
+                return null;
+            }
+
+            return $run;
+        });
+
+        if (! $run) {
+            return;
+        }
+
+        $run = $this->processNextGradingSubmission($run, $run->owner()->firstOrFail(), $ai, $generation);
+
+        DB::transaction(function () use ($run, $generation) {
+            $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+            if ($run->queue_generation !== $generation) {
+                return;
+            }
+            if (! $run->isActive() || $run->error_code === 'budget_exhausted') {
+                $run->update(['queue_job_id' => null]);
+
+                return;
+            }
+            if ($run->status === AiProcessingRun::STATUS_PROCESSING) {
+                $delay = $run->lease_expires_at
+                    ? max(1, (int) ceil(now()->diffInSeconds($run->lease_expires_at, false)) + 1)
+                    : 30;
+                $this->enqueueGradingRun($run, $delay);
+
+                return;
+            }
+
+            $next = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)->min('next_eligible_at');
+            $ready = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->where(fn ($query) => $query->whereNull('next_eligible_at')->orWhere('next_eligible_at', '<=', now()))->exists();
+            $delay = ! $ready && $next ? max(1, (int) ceil(now()->diffInSeconds(Carbon::parse($next), false))) : 0;
+            $this->enqueueGradingRun($run, $delay);
+        });
+    }
+
     public function startAssignmentRun(
         User $owner,
         Assignment $assignment,
@@ -43,6 +191,14 @@ class AiProcessingRunService
 
                 if ($existing) {
                     return $existing;
+                }
+
+                if ($processingType === AiProcessingRun::TYPE_GRADING
+                    && AiGradingRunSubmission::query()->where('status', AiGradingRunSubmission::STATUS_FAILED)
+                        ->where('error_code', 'outcome_unknown')
+                        ->whereHas('run', fn ($query) => $query->where('resource_type', Assignment::class)->where('resource_id', $assignment->id))
+                        ->exists()) {
+                    throw new \InvalidArgumentException('Review the unknown AI request outcome before starting another grading run.');
                 }
 
                 return AiProcessingRun::create([
@@ -70,12 +226,16 @@ class AiProcessingRunService
         }
     }
 
-    public function claim(AiProcessingRun $run, User $owner): ?string
+    public function claim(AiProcessingRun $run, User $owner, ?int $generation = null): ?string
     {
         $this->authorizeRun($owner, $run);
 
-        return DB::transaction(function () use ($run) {
+        return DB::transaction(function () use ($run, $generation) {
             $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+
+            if ($generation !== null && $run->queue_generation !== $generation) {
+                return null;
+            }
 
             if ($run->status === AiProcessingRun::STATUS_PROCESSING && $run->isLeaseExpired()) {
                 $run->update([
@@ -120,7 +280,7 @@ class AiProcessingRunService
                 'status' => AiProcessingRun::STATUS_PROCESSING,
                 'started_at' => $run->started_at ?? now(),
                 'lease_token' => $token,
-                'lease_expires_at' => now()->addSeconds($this->leaseSeconds()),
+                'lease_expires_at' => now()->addSeconds($this->leaseSeconds($run)),
                 'error_code' => null,
             ]);
 
@@ -200,6 +360,14 @@ class AiProcessingRunService
 
                     if (! $run || $run->status !== AiProcessingRun::STATUS_PROCESSING || ! $run->isLeaseExpired()) {
                         return false;
+                    }
+
+                    if ($run->processing_type === AiProcessingRun::TYPE_GRADING && $run->queue_generation > 0) {
+                        $this->recoverExpiredGradingClaims($run, $run->queue_generation);
+                        $run->refresh();
+                        if (! $run->isActive()) {
+                            return true;
+                        }
                     }
 
                     if ($run->retry_count >= $run->max_retry_attempts) {
@@ -291,6 +459,10 @@ class AiProcessingRunService
 
         $run = $this->startAssignmentRun($owner, $assignment, AiProcessingRun::TYPE_GRADING, 1);
 
+        if ($submission && $run->queue_generation > 0) {
+            throw new \InvalidArgumentException('A batch grading run is already active.');
+        }
+
         $eligible = Submission::query()
             ->where('assignment_id', $assignment->id)
             ->whereIn('status', ['pending', 'grading'])
@@ -335,11 +507,11 @@ class AiProcessingRunService
         });
     }
 
-    public function claimNextGradingSubmission(AiProcessingRun $run, User $owner): ?AiGradingRunSubmission
+    public function claimNextGradingSubmission(AiProcessingRun $run, User $owner, ?int $generation = null): ?AiGradingRunSubmission
     {
         $this->authorizeRun($owner, $run);
-        $this->recoverExpiredGradingClaims($run);
-        $leaseToken = $this->claim($run, $owner);
+        $this->recoverExpiredGradingClaims($run, $generation);
+        $leaseToken = $this->claim($run, $owner, $generation);
 
         if (! $leaseToken) {
             return null;
@@ -377,32 +549,48 @@ class AiProcessingRunService
         });
     }
 
-    public function recoverExpiredGradingClaims(AiProcessingRun $run): void
+    public function recoverExpiredGradingClaims(AiProcessingRun $run, ?int $generation = null): void
     {
         if ($run->processing_type !== AiProcessingRun::TYPE_GRADING) {
             return;
         }
 
-        DB::transaction(function () use ($run) {
-            AiGradingRunSubmission::query()
+        DB::transaction(function () use ($run, $generation) {
+            $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+            if ($generation !== null && $run->queue_generation !== $generation) {
+                return;
+            }
+            $expired = AiGradingRunSubmission::query()
                 ->where('ai_processing_run_id', $run->id)
                 ->where('status', AiGradingRunSubmission::STATUS_PROCESSING)
                 ->where('lease_expires_at', '<=', now())
-                ->update([
-                    'status' => AiGradingRunSubmission::STATUS_PENDING,
+                ->lockForUpdate()->get();
+            $unknown = $run->queue_generation > 0 && $expired->contains('error_code', 'provider_in_flight');
+            foreach ($expired as $work) {
+                $isUnknown = $run->queue_generation > 0 && $work->error_code === 'provider_in_flight';
+                $work->update([
+                    'status' => $isUnknown ? AiGradingRunSubmission::STATUS_FAILED : AiGradingRunSubmission::STATUS_PENDING,
+                    'error_code' => $isUnknown ? 'outcome_unknown' : $work->error_code,
                     'lease_token' => null,
                     'lease_expires_at' => null,
-                    'updated_at' => now(),
                 ]);
+            }
+            if ($unknown) {
+                $this->syncGradingRunProgress($run, 'outcome_unknown');
+                $this->failRun($run, 'outcome_unknown');
+                $run->queue_job_id = null;
+                $run->save();
+            }
         });
     }
 
     public function processNextGradingSubmission(
         AiProcessingRun $run,
         User $owner,
-        AIGraderService $ai
+        AIGraderService $ai,
+        ?int $generation = null
     ): AiProcessingRun {
-        $work = $this->claimNextGradingSubmission($run, $owner);
+        $work = $this->claimNextGradingSubmission($run, $owner, $generation);
 
         if (! $work) {
             return $run->fresh();
@@ -410,6 +598,12 @@ class AiProcessingRunService
 
         $leaseToken = (string) $work->lease_token;
         $assignment = Assignment::query()->findOrFail($run->resource_id);
+        if ($generation !== null) {
+            $protected = $this->checkGradingWorkBeforeProvider($run, $owner, $leaseToken, $work);
+            if ($protected) {
+                return $protected;
+            }
+        }
         $estimatedTokens = max(1, (int) ceil((
             strlen($work->content)
             + strlen((string) $assignment->title)
@@ -445,20 +639,24 @@ class AiProcessingRunService
         if (isset($result['error'])) {
             $errorCode = $this->safeErrorCode((string) ($result['error_code'] ?? 'provider_request_failed'));
 
+            if ($generation !== null && in_array($errorCode, ['provider_unavailable', 'provider_request_failed'], true)) {
+                $errorCode = 'outcome_unknown';
+            }
+
             return $this->recordGradingFailure(
                 $run,
                 $owner,
                 $leaseToken,
                 $work,
                 $errorCode,
-                in_array($errorCode, ['provider_rate_limited', 'provider_unavailable', 'provider_request_failed'], true)
+                $generation !== null ? $errorCode === 'provider_rate_limited' : in_array($errorCode, ['provider_rate_limited', 'provider_unavailable', 'provider_request_failed'], true)
             );
         }
 
         try {
             $validated = $ai->validateGradeResponse($result, (float) $assignment->max_score, $assignment->type);
         } catch (\InvalidArgumentException) {
-            return $this->recordGradingFailure($run, $owner, $leaseToken, $work, 'invalid_response', true);
+            return $this->recordGradingFailure($run, $owner, $leaseToken, $work, 'invalid_response', $generation === null);
         }
 
         return $this->completeGradingSubmission($run, $owner, $leaseToken, $work, $validated, $ai->modelUsed());
@@ -475,6 +673,22 @@ class AiProcessingRunService
                 throw new \InvalidArgumentException('Only active grading runs can be cancelled.');
             }
 
+            $unknown = $run->queue_generation > 0 && $run->gradingSubmissions()
+                ->where('status', AiGradingRunSubmission::STATUS_PROCESSING)
+                ->where('error_code', 'provider_in_flight')->exists();
+            if ($unknown) {
+                $run->gradingSubmissions()
+                    ->where('status', AiGradingRunSubmission::STATUS_PROCESSING)
+                    ->where('error_code', 'provider_in_flight')
+                    ->update([
+                        'status' => AiGradingRunSubmission::STATUS_FAILED,
+                        'error_code' => 'outcome_unknown',
+                        'lease_token' => null,
+                        'lease_expires_at' => null,
+                        'updated_at' => now(),
+                    ]);
+            }
+
             $run->gradingSubmissions()
                 ->whereIn('status', [AiGradingRunSubmission::STATUS_PENDING, AiGradingRunSubmission::STATUS_PROCESSING])
                 ->update([
@@ -485,7 +699,13 @@ class AiProcessingRunService
                     'lease_expires_at' => null,
                     'updated_at' => now(),
                 ]);
-            $this->syncGradingRunProgress($run, 'cancelled');
+            if ($run->queue_generation > 0) {
+                $run->queue_generation++;
+                $run->queue_job_id = null;
+            }
+            $this->syncGradingRunProgress($run, $unknown ? 'outcome_unknown' : 'cancelled');
+            $this->failRun($run, $unknown ? 'outcome_unknown' : 'cancelled');
+            $run->save();
 
             return $run->fresh();
         });
@@ -513,6 +733,7 @@ class AiProcessingRunService
                     'provider_unavailable',
                     'provider_request_failed',
                     'invalid_response',
+                    'outcome_unknown',
                 ]);
 
             if (! (clone $retryable)->exists()) {
@@ -585,23 +806,38 @@ class AiProcessingRunService
                 'provider_unavailable',
                 'provider_request_failed',
                 'invalid_response',
+                'outcome_unknown',
             ])
             ->exists();
 
+        $unknown = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_FAILED)
+            ->where('error_code', 'outcome_unknown')->count();
+        $queued = $run->queue_generation > 0 && $run->queue_job_id !== null
+            && DB::table(config('queue.connections.database.table', 'jobs'))->where('id', $run->queue_job_id)->exists();
+        $preparing = $run->queue_generation > 0 && $run->preparation_status !== AiProcessingRun::PREPARATION_PREPARED;
+
         return [
             'status' => $run->status,
-            'total_submissions' => $run->total_work_units,
+            'preparation_status' => $run->preparation_status,
+            'is_queued_batch' => $run->queue_generation > 0,
+            'queued' => $queued,
+            'can_resume' => $run->queue_generation > 0 && $run->isActive() && ! $queued
+                && ($run->status !== AiProcessingRun::STATUS_PROCESSING || $run->isLeaseExpired()),
+            'stalled' => $run->queue_generation > 0 && $run->status === AiProcessingRun::STATUS_PROCESSING
+                && (! $queued || $run->isLeaseExpired()),
+            'outcome_unknown_count' => $unknown,
+            'total_submissions' => $preparing ? 0 : $run->total_work_units,
             'pending_count' => $pending,
             'processing_count' => $processing,
             'completed_count' => $completed,
             'failed_count' => $failed,
-            'progress_percentage' => $run->total_work_units > 0
+            'progress_percentage' => $preparing ? 0 : ($run->total_work_units > 0
                 ? round(($completed / $run->total_work_units) * 100, 2)
-                : 100,
+                : 100),
             'next_eligible_at' => $nextEligibleAt
                 ? Carbon::parse($nextEligibleAt)->toIso8601String()
                 : null,
-            'can_continue' => $run->status === AiProcessingRun::STATUS_PENDING && $hasReadyWork,
+            'can_continue' => $run->queue_generation === 0 && $run->status === AiProcessingRun::STATUS_PENDING && $hasReadyWork,
             'can_retry' => $run->status === AiProcessingRun::STATUS_FAILED
                 && $run->retry_count < $run->max_retry_attempts
                 && $hasRetryableFailure,
@@ -617,6 +853,8 @@ class AiProcessingRunService
                 'submission_changed' => 'The submission changed after processing started.',
                 'submission_deleted' => 'The submission is no longer available.',
                 'grade_protected' => 'A faculty decision protects this submission from AI changes.',
+                'outcome_unknown' => 'The provider outcome is unknown. Review the submission before retrying.',
+                'queue_failed' => 'The grading worker stopped. Resume the batch when ready.',
                 default => null,
             },
         ];
@@ -969,6 +1207,36 @@ class AiProcessingRunService
         });
     }
 
+    private function checkGradingWorkBeforeProvider(
+        AiProcessingRun $run,
+        User $owner,
+        string $leaseToken,
+        AiGradingRunSubmission $work
+    ): ?AiProcessingRun {
+        $this->authorizeRun($owner, $run);
+
+        return DB::transaction(function () use ($run, $leaseToken, $work) {
+            $lockedRun = $this->lockedLease($run, $leaseToken);
+            $work = AiGradingRunSubmission::query()->lockForUpdate()->findOrFail($work->id);
+            if ($work->status !== AiGradingRunSubmission::STATUS_PROCESSING
+                || ! $work->lease_token || ! hash_equals($work->lease_token, $leaseToken)) {
+                throw new \RuntimeException('AI grading work lease is no longer valid.');
+            }
+            $submission = Submission::query()->lockForUpdate()->find($work->submission_id);
+            if (! $submission) {
+                return $this->failGradingIntegrityCheck($lockedRun, $work, 'submission_deleted');
+            }
+            if (! hash_equals($work->content_hash, hash('sha256', (string) $submission->content))) {
+                return $this->failGradingIntegrityCheck($lockedRun, $work, 'submission_changed');
+            }
+            if ($submission->status === 'approved' || $submission->grade()->exists() || $submission->aiFeedback()->exists()) {
+                return $this->failGradingIntegrityCheck($lockedRun, $work, 'grade_protected');
+            }
+
+            return null;
+        });
+    }
+
     private function markGradingAttempt(
         AiProcessingRun $run,
         User $owner,
@@ -989,7 +1257,10 @@ class AiProcessingRunService
                 throw new \RuntimeException('AI grading work lease is no longer valid.');
             }
 
-            $work->increment('attempt_count');
+            $work->update([
+                'attempt_count' => $work->attempt_count + 1,
+                'error_code' => $run->queue_generation > 0 ? 'provider_in_flight' : null,
+            ]);
         });
     }
 
@@ -1099,6 +1370,12 @@ class AiProcessingRunService
                 'lease_expires_at' => null,
             ]);
             $this->syncGradingRunProgress($lockedRun, $errorCode);
+
+            if ($errorCode === 'outcome_unknown' && $lockedRun->queue_generation > 0) {
+                $this->failRun($lockedRun, 'outcome_unknown');
+                $lockedRun->queue_job_id = null;
+                $lockedRun->save();
+            }
 
             return $lockedRun;
         });
@@ -1430,6 +1707,9 @@ class AiProcessingRunService
                 $run->active_key = null;
                 $run->lease_token = null;
                 $run->lease_expires_at = null;
+                if ($run->queue_generation > 0) {
+                    $run->queue_job_id = null;
+                }
             }
 
             return;
@@ -1448,6 +1728,9 @@ class AiProcessingRunService
         $run->active_key = null;
         $run->lease_token = null;
         $run->lease_expires_at = null;
+        if ($run->queue_generation > 0) {
+            $run->queue_job_id = null;
+        }
     }
 
     private function authorizeAssignment(User $owner, Assignment $assignment): void
@@ -1484,9 +1767,13 @@ class AiProcessingRunService
         return max(1, min(255, (int) config('ai_processing.max_retry_attempts')));
     }
 
-    private function leaseSeconds(): int
+    private function leaseSeconds(AiProcessingRun $run): int
     {
-        return max(1, (int) config('ai_processing.lease_seconds'));
+        return max(1, (int) config(
+            $run->processing_type === AiProcessingRun::TYPE_GRADING && $run->queue_generation > 0
+                ? 'ai_processing.grading_queue_lease_seconds'
+                : 'ai_processing.lease_seconds'
+        ));
     }
 
     private function maxPairAttempts(): int

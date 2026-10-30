@@ -10,6 +10,7 @@ use App\Services\AiProcessingRunService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class AiGradingController extends Controller
@@ -31,9 +32,13 @@ class AiGradingController extends Controller
             : null;
 
         try {
-            $run = $processing->prepareGradingRun($request->user(), $assignment, $submission);
+            $run = $validated['mode'] === 'batch'
+                ? $processing->startQueuedGradingBatch($request->user(), $assignment)
+                : $processing->prepareGradingRun($request->user(), $assignment, $submission);
 
-            return $this->success('AI grading run is ready.', $processing->gradingRunStatus($run, $request->user()));
+            return $this->success($validated['mode'] === 'batch' ? 'AI grading batch queued.' : 'AI grading run is ready.', $processing->gradingRunStatus($run, $request->user()));
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failure($exception->getMessage(), 422);
         } catch (HttpExceptionInterface $exception) {
             throw $exception;
         } catch (\Throwable $exception) {
@@ -69,6 +74,11 @@ class AiGradingController extends Controller
         }
 
         try {
+            if ($run->queue_generation > 0) {
+                $run = $processing->resumeQueuedGradingRun($run, $request->user());
+
+                return $this->success('AI grading batch checked.', $processing->gradingRunStatus($run, $request->user()) + ['outcome' => 'no_eligible_work']);
+            }
             $beforeCompleted = $run->completed_work_units;
             $beforeFailed = $run->failed_work_units;
             $run = $processing->processNextGradingSubmission($run, $request->user(), $ai);
@@ -108,7 +118,18 @@ class AiGradingController extends Controller
         }
 
         try {
-            $run = $processing->retryFailedGradingRun($run, $request->user());
+            $run = DB::transaction(function () use ($processing, $request, $run) {
+                $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
+                if ($run->queue_generation > 0 && $run->gradingSubmissions()
+                    ->where('status', 'failed')->where('error_code', 'outcome_unknown')->exists()) {
+                    $request->validate(['confirm_unknown' => ['accepted']]);
+                }
+                $run = $processing->retryFailedGradingRun($run, $request->user());
+
+                return $run->queue_generation > 0
+                    ? $processing->resumeQueuedGradingRun($run, $request->user())
+                    : $run;
+            });
 
             return $this->success('Failed AI grading work is ready to retry.', $processing->gradingRunStatus($run, $request->user()));
         } catch (\InvalidArgumentException) {

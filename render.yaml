@@ -49,9 +49,9 @@ services:
           - key: CACHE_STORE
             value: database
 
-          # Queue — sync: jobs run immediately in the same request (no worker needed)
+          # Queue — processed by the Supervisor worker using PostgreSQL
           - key: QUEUE_CONNECTION
-            value: sync
+            value: database
 
           # Storage — S3 / Cloudflare R2
           - key: FILESYSTEM_DISK

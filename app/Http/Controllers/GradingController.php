@@ -9,6 +9,7 @@ use App\Services\StudentNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -86,36 +87,27 @@ class GradingController extends Controller
                 ], 422);
             }
 
-            $grade = Grade::updateOrCreate(
-                [
-                    'submission_id' => $submission->id,
-                ],
-                [
-                    'student_id' =>
-                        $submission->student_id,
+            [$grade, $submission] = DB::transaction(function () use ($submission, $validated) {
+                $submission = Submission::query()->lockForUpdate()->findOrFail($submission->id);
+                $grade = Grade::updateOrCreate(
+                    ['submission_id' => $submission->id],
+                    [
+                        'student_id' => $submission->student_id,
+                        'section_id' => $submission->assignment->section_id,
+                        'assignment_id' => $submission->assignment_id,
+                        'raw_score' => $validated['raw_score'],
+                        'max_score' => $submission->assignment->max_score,
+                        'remarks' => $validated['remarks'] ?? null,
+                        'is_released' => false,
+                    ]
+                );
 
-                    'section_id' =>
-                        $submission->assignment->section_id,
+                $submission->update([
+                    'status' => 'approved',
+                ]);
 
-                    'assignment_id' =>
-                        $submission->assignment_id,
-
-                    'raw_score' =>
-                        $validated['raw_score'],
-
-                    'max_score' =>
-                        $submission->assignment->max_score,
-
-                    'remarks' =>
-                        $validated['remarks'] ?? null,
-
-                    'is_released' => false,
-                ]
-            );
-
-            $submission->update([
-                'status' => 'approved',
-            ]);
+                return [$grade, $submission];
+            });
 
             return response()->json([
                 'success' => true,

@@ -6,6 +6,7 @@ return [
     'max_retry_attempts' => (int) env('AI_PROCESSING_MAX_RETRY_ATTEMPTS', 3),
     'timeout_budget_seconds' => (int) env('AI_PROCESSING_TIMEOUT_BUDGET_SECONDS', 25),
     'lease_seconds' => (int) env('AI_PROCESSING_LEASE_SECONDS', 45),
+    'grading_queue_lease_seconds' => (int) env('AI_GRADING_QUEUE_LEASE_SECONDS', 150),
     'grading_daily_request_budget' => (int) env('AI_GRADING_DAILY_REQUEST_BUDGET', 25),
     'grading_daily_input_token_budget' => (int) env('AI_GRADING_DAILY_INPUT_TOKEN_BUDGET', 125000),
     'grading_requests_per_minute' => (int) env('AI_GRADING_REQUESTS_PER_MINUTE', 2),
