@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import {
-    ArrowLeft,
-    Download,
-    FileText,
-    Pencil,
-} from 'lucide-vue-next';
+import { Download, FileText, Pencil } from 'lucide-vue-next';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -87,27 +83,14 @@ function formatFileSize(bytes: number): string {
         class="flex h-full max-w-2xl flex-1 flex-col gap-6 p-4"
     >
         <!-- Header -->
-        <div
-            class="flex items-start justify-between gap-3"
-        >
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/${module.section.id}/modules`"
+            label="Back to Modules"
+        />
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex items-start gap-3">
-                <!-- Back -->
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    as-child
-                    class="-ml-2 mt-0.5"
-                >
-                    <Link
-                        :href="
-                            `/sections/${module.section.id}/modules`
-                        "
-                    >
-                        <ArrowLeft
-                            class="h-4 w-4"
-                        />
-                    </Link>
-                </Button>
+
 
                 <div>
                     <div

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import AuthStatusMessage from '@/components/AuthStatusMessage.vue';
 import InputError from '@/components/InputError.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
@@ -33,12 +34,7 @@ defineProps<{ status?: string }>();
             </p>
         </div>
 
-        <div
-            v-if="status"
-            class="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
-        >
-            {{ status }}
-        </div>
+        <AuthStatusMessage :message="status" class="mb-6" />
 
         <Form
             v-bind="email.form()"
@@ -70,9 +66,14 @@ defineProps<{ status?: string }>();
             </Button>
         </Form>
 
-        <div class="mt-8 border-t pt-6 text-center text-sm text-muted-foreground">
+        <div
+            class="mt-8 border-t pt-6 text-center text-sm text-muted-foreground"
+        >
             Remember your password?
-            <TextLink :href="login()" class="font-medium underline underline-offset-4">
+            <TextLink
+                :href="login()"
+                class="font-medium underline underline-offset-4"
+            >
                 Log in
             </TextLink>
         </div>

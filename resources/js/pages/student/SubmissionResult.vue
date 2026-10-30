@@ -7,6 +7,7 @@ import {
     Loader2,
 } from 'lucide-vue-next';
 
+import SubmissionQuestionReview from '@/components/student/SubmissionQuestionReview.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -254,30 +255,6 @@ function getScoreLabel(): string {
 |--------------------------------------------------------------------------
 */
 
-function isSelected(
-    choice: Choice,
-): boolean {
-    return choice.is_selected;
-}
-
-function isIncorrectSelected(
-    choice: Choice,
-): boolean {
-    return (
-        props.answersReleased &&
-        choice.is_selected &&
-        choice.is_correct === false
-    );
-}
-
-function isCorrectChoice(
-    choice: Choice,
-): boolean {
-    return (
-        props.answersReleased &&
-        choice.is_correct === true
-    );
-}
 </script>
 
 <template>
@@ -289,7 +266,10 @@ function isCorrectChoice(
         class="flex min-h-full w-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
         <div
-            class="w-full max-w-3xl space-y-5 sm:space-y-6"
+            :class="[
+                'w-full space-y-5 sm:space-y-6',
+                isMcq ? 'max-w-screen-2xl' : 'max-w-5xl',
+            ]"
         >
 
             <!-- =========================================================
@@ -699,111 +679,10 @@ function isCorrectChoice(
                     </p>
                 </div>
 
-                <div
-                    v-for="(
-                        q, qi
-                    ) in submission.questions"
-                    :key="q.id"
-                    class="min-w-0 space-y-3 rounded-xl border bg-card p-4 shadow-sm"
-                >
-                    <!-- Question -->
-
-                    <div
-                        class="flex items-start justify-between gap-3"
-                    >
-                        <p
-                            class="min-w-0 break-words text-sm font-medium leading-relaxed"
-                        >
-                            {{ qi + 1 }}.
-                            {{ q.question }}
-                        </p>
-
-                        <span
-                            class="shrink-0 text-xs text-muted-foreground"
-                        >
-                            {{ q.points }} pts
-                        </span>
-                    </div>
-
-                    <!-- Choices -->
-
-                    <div class="space-y-1.5">
-                        <div
-                            v-for="c in q.choices"
-                            :key="c.id"
-                            class="flex min-w-0 items-start gap-2 rounded-lg border px-3 py-2 text-sm"
-                            :class="{
-                                'border-green-200 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100':
-                                    isCorrectChoice(c),
-
-                                'border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100':
-                                    isIncorrectSelected(c),
-
-                                'border-primary/30 bg-primary/5 text-slate-900 dark:text-slate-100':
-                                    !answersReleased &&
-                                    isSelected(c),
-
-                                'border-muted':
-                                    answersReleased &&
-                                    !isCorrectChoice(c) &&
-                                    !isIncorrectSelected(c),
-                            }"
-                        >
-                            <!-- Selected Indicator -->
-
-                            <span
-                                class="w-4 shrink-0 text-xs font-semibold"
-                            >
-                                {{
-                                    isSelected(c)
-                                        ? '►'
-                                        : ''
-                                }}
-                            </span>
-
-                            <!-- Choice -->
-
-                            <span
-                                class="min-w-0 flex-1 break-words"
-                            >
-                                {{ c.choice_text }}
-                            </span>
-
-                            <!-- Selected -->
-
-                            <span
-                                v-if="isSelected(c)"
-                                class="shrink-0 text-xs font-medium"
-                            >
-                                Your answer
-                            </span>
-
-                            <!-- Correct -->
-
-                            <span
-                                v-if="
-                                    isCorrectChoice(c)
-                                "
-                                class="shrink-0 text-xs font-medium text-green-600 dark:text-green-400"
-                            >
-                                Correct
-                            </span>
-
-                            <!-- Incorrect -->
-
-                            <span
-                                v-else-if="
-                                    isIncorrectSelected(
-                                        c,
-                                    )
-                                "
-                                class="shrink-0 text-xs font-medium text-red-600 dark:text-red-400"
-                            >
-                                Incorrect
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                <SubmissionQuestionReview
+                    :questions="submission.questions"
+                    :answers-released="answersReleased"
+                />
             </div>
 
             <!-- MCQ WITH NO QUESTIONS -->

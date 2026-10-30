@@ -5,12 +5,12 @@ import {
     Plus,
     Pencil,
     Trash2,
-    ArrowLeft,
     ClipboardList,
     Link2,
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -488,22 +488,14 @@ function presetsFor(
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
 
         <!-- Header -->
-        <div class="flex items-start gap-3">
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/${props.sectionId}/class-record`"
+            label="Back to Class Record"
+        />
+        <div class="flex flex-wrap items-start gap-3">
 
-            <Button
-                variant="ghost"
-                size="sm"
-                as-child
-                class="-ml-2 mt-0.5"
-            >
-                <Link
-                    :href="
-                        `/sections/${props.sectionId}/class-record`
-                    "
-                >
-                    <ArrowLeft class="h-4 w-4" />
-                </Link>
-            </Button>
+
 
             <div class="flex-1">
                 <h1 class="text-xl font-semibold">

@@ -17,6 +17,8 @@ import { ref, onMounted } from 'vue';
 
 import BaseTable from '@/components/BaseTable.vue';
 
+import PageHeader from '@/components/PageHeader.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -708,117 +710,46 @@ onMounted(() => {
         v-else-if="section"
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
-        <!-- ========================================================= -->
-        <!-- HEADER -->
-        <!-- ========================================================= -->
-
-        <div
-            class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+        <SectionBackLink href="/sections" label="Back to Sections" class="-mb-2" />
+        <PageHeader
+            :title="section.name"
+            :description="`${section.subject.code} - ${section.subject.name}`"
+            class="[&_h1]:break-words [&_p]:break-words"
         >
-            <div class="min-w-0">
-                <h1
-                    class="truncate text-xl font-semibold sm:text-2xl"
-                >
-                    {{ section.name }}
-                </h1>
-
-                <p
-                    class="mt-1 truncate text-xs text-muted-foreground sm:text-sm"
-                    :title="`${section.subject.code} — ${section.subject.name}`"
-                >
-                    {{ section.subject.code }}
-                    —
-                    {{ section.subject.name }}
-                </p>
-            </div>
-
-            <!-- Action Buttons -->
-
-            <div
-                class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap"
-            >
-                <Button
-                    variant="outline"
-                    size="sm"
-                    class="w-full lg:w-auto"
-                    as-child
-                >
-                    <Link
-                        :href="`/sections/${section.id}/modules`"
-                    >
-                        <Layers
-                            class="mr-1.5 h-3.5 w-3.5 shrink-0"
-                        />
-
-                        <span>Modules</span>
-                    </Link>
-                </Button>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    class="w-full lg:w-auto"
-                    as-child
-                >
-                    <Link
-                        :href="`/sections/${section.id}/assignments`"
-                    >
-                        <ClipboardList
-                            class="mr-1.5 h-3.5 w-3.5 shrink-0"
-                        />
-
-                        <span>Assignments</span>
-                    </Link>
-                </Button>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    class="w-full lg:w-auto"
-                    as-child
-                >
-                    <Link
-                        :href="`/sections/${section.id}/attendance`"
-                    >
-                        <CalendarCheck
-                            class="mr-1.5 h-3.5 w-3.5 shrink-0"
-                        />
-
-                        <span>Attendance</span>
-                    </Link>
-                </Button>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    class="w-full lg:w-auto"
-                    as-child
-                >
-                    <Link
-                        :href="`/sections/${section.id}/class-record`"
-                    >
-                        <BarChart2
-                            class="mr-1.5 h-3.5 w-3.5 shrink-0"
-                        />
-
-                        <span>Class Record</span>
-                    </Link>
-                </Button>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    class="col-span-2 w-full sm:col-span-1 lg:w-auto"
-                    as-child
-                >
-                    <Link
-                        :href="`/sections/edit/${section.id}`"
-                    >
+            <template #actions>
+                <Button variant="outline" size="sm" as-child>
+                    <Link :href="`/sections/edit/${section.id}?back=section`">
                         Edit Section
                     </Link>
                 </Button>
-            </div>
-        </div>
+            </template>
+        </PageHeader>
+
+        <nav aria-label="Section navigation" class="flex flex-wrap items-center gap-2 border-b pb-3">
+            <span aria-current="page" class="inline-flex min-h-10 items-center rounded-md bg-muted px-3 text-sm font-semibold text-foreground">
+                Overview
+            </span>
+            <Button variant="outline" size="sm" as-child class="min-h-10">
+                <Link :href="`/sections/${section.id}/modules`">
+                    <Layers class="mr-1.5 size-4" aria-hidden="true" /> Modules
+                </Link>
+            </Button>
+            <Button variant="outline" size="sm" as-child class="min-h-10">
+                <Link :href="`/sections/${section.id}/assignments`">
+                    <ClipboardList class="mr-1.5 size-4" aria-hidden="true" /> Assignments
+                </Link>
+            </Button>
+            <Button variant="outline" size="sm" as-child class="min-h-10">
+                <Link :href="`/sections/${section.id}/attendance`">
+                    <CalendarCheck class="mr-1.5 size-4" aria-hidden="true" /> Attendance
+                </Link>
+            </Button>
+            <Button variant="outline" size="sm" as-child class="min-h-10">
+                <Link :href="`/sections/${section.id}/class-record`">
+                    <BarChart2 class="mr-1.5 size-4" aria-hidden="true" /> Class Record
+                </Link>
+            </Button>
+        </nav>
 
         <!-- ========================================================= -->
         <!-- SECTION INFO -->
@@ -1253,7 +1184,7 @@ onMounted(() => {
                 #cell-student="{ row }"
             >
                 <Link
-                    :href="`/students/${row.student.id}`"
+                        :href="`/students/${row.student.id}?section_id=${encodeURIComponent(section.id)}`"
                     class="font-medium hover:underline"
                 >
                     {{

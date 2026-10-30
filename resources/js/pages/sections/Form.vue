@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { Layers } from 'lucide-vue-next';
 import { reactive, ref } from 'vue';
 
 import InputError from '@/components/InputError.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +49,15 @@ const props = defineProps<{
     semesters: Semester[];
     subjects: Subject[];
 }>();
+
+const backToSection = Boolean(
+    props.section &&
+        new URLSearchParams(usePage().url.split('?')[1] ?? '').get('back') ===
+            'section',
+);
+const sectionBackHref = backToSection
+    ? `/sections/show/${props.section!.id}`
+    : '/sections';
 
 defineOptions({
     layout: {
@@ -98,7 +108,7 @@ async function submit() {
 
         showApiToast(response);
 
-        window.location.href = '/sections';
+        window.location.href = sectionBackHref;
     } catch (error: any) {
         if (error.response?.status === 422) {
             errors.value = error.response.data.errors ?? {};
@@ -121,7 +131,13 @@ async function submit() {
         class="flex min-h-full flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-4 lg:p-6"
     >
         <!-- HEADER -->
-        <div class="flex min-w-0 items-center gap-3">
+        <SectionBackLink
+            class="-mb-3"
+            :href="sectionBackHref"
+            :label="backToSection ? 'Back to Section' : 'Back to Sections'"
+        />
+        <div class="flex min-w-0 flex-wrap items-center gap-3">
+
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
             >
@@ -264,7 +280,7 @@ async function submit() {
                 </Button>
 
                 <Button variant="outline" class="w-full sm:w-auto" as-child>
-                    <Link href="/sections"> Cancel </Link>
+                    <Link :href="sectionBackHref"> Cancel </Link>
                 </Button>
             </div>
         </form>

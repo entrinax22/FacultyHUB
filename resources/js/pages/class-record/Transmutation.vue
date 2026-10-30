@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
-import { Plus, Trash2, ArrowLeft, RefreshCw } from 'lucide-vue-next';
+import { Plus, Trash2, RefreshCw } from 'lucide-vue-next';
 import { onMounted, ref } from 'vue';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -290,19 +291,13 @@ async function resetScale() {
         class="flex h-full max-w-2xl flex-1 flex-col gap-6 p-4"
     >
         <!-- Header -->
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/${props.sectionId}/class-record`"
+            label="Back to Class Record"
+        />
         <div class="flex items-start gap-3">
-            <Button
-                variant="ghost"
-                size="sm"
-                as-child
-                class="-ml-2 mt-0.5"
-            >
-                <Link
-                    :href="`/sections/${props.sectionId}/class-record`"
-                >
-                    <ArrowLeft class="h-4 w-4" />
-                </Link>
-            </Button>
+
 
             <div>
                 <h1 class="text-xl font-semibold">

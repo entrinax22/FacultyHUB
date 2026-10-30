@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { X, Upload, FileText, BookOpen } from 'lucide-vue-next';
 import { ref } from 'vue';
 
 import InputError from '@/components/InputError.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -53,6 +54,14 @@ const props = defineProps<{
     section: Section;
     module?: Module;
 }>();
+
+const backToModules =
+    new URLSearchParams(usePage().url.split('?')[1] ?? '').get('back') ===
+    'modules';
+const formBackHref =
+    props.module && !backToModules
+        ? `/modules/${props.module.id}`
+        : `/sections/${props.section.id}/modules`;
 
 defineOptions({
     layout: {
@@ -224,7 +233,13 @@ async function submit() {
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
 
         <!-- Header -->
-        <div class="flex items-center gap-3">
+        <SectionBackLink
+            class="-mb-3"
+            :href="formBackHref"
+            :label="backToModules ? 'Back to Modules' : module ? 'Back to Module' : 'Back to Modules'"
+        />
+        <div class="flex flex-wrap items-center gap-3">
+
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
             >
@@ -457,7 +472,7 @@ async function submit() {
                     :disabled="processing"
                 >
                     <Link
-                        :href="`/sections/${section.id}/modules`"
+                        :href="formBackHref"
                     >
                         Cancel
                     </Link>

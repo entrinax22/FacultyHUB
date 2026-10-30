@@ -48,6 +48,7 @@ class AdminController extends Controller
                     ], 422);
                 }
             }
+            $selectedSemester = $semesterId ? Semester::query()->find($semesterId) : null;
 
             $dateFrom = $filters['date_from'] ?? null;
             $dateTo = $filters['date_to'] ?? null;
@@ -90,8 +91,8 @@ class AdminController extends Controller
                 ->select('status', DB::raw('COUNT(*) as aggregate'))->groupBy('status')
                 ->pluck('aggregate', 'status');
             $submissionTrend = (clone $submissionQuery)
-                ->selectRaw('CAST(submitted_at AS DATE) as day, COUNT(*) as aggregate')
-                ->groupBy('day')->orderBy('day')->limit(90)->get()
+                ->selectRaw('DATE(submitted_at) as day, COUNT(*) as aggregate')
+                ->groupBy('day')->orderByDesc('day')->limit(90)->get()->reverse()
                 ->map(fn ($row) => ['date' => (string) $row->day, 'count' => (int) $row->aggregate])->values();
 
             $releasedGrades = Grade::query()->where('grades.is_released', true)->whereIn('grades.section_id', $sectionIds)
@@ -187,6 +188,12 @@ class AdminController extends Controller
                             ),
                             'name' => $activeSemester->name,
                             'school_year' => $activeSemester->school_year,
+                        ]
+                        : null,
+                    'selectedSemester' => $selectedSemester
+                        ? [
+                            'name' => $selectedSemester->name,
+                            'school_year' => $selectedSemester->school_year,
                         ]
                         : null,
 

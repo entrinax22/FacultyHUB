@@ -15,6 +15,7 @@ import { onMounted, ref } from 'vue';
 
 import BaseTable from '@/components/BaseTable.vue';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -367,26 +368,21 @@ onMounted(() => {
     >
 
         <!-- Header -->
-        <div
-            class="flex items-start justify-between"
-        >
-            <div>
-                <h1
-                    class="text-2xl font-semibold"
-                >
-                    Assignments
-                </h1>
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/show/${section.id}`"
+            label="Back to Section"
+        />
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
 
-                <p
-                    class="text-sm text-muted-foreground"
-                >
-                    {{ section.subject.code }}
-                    ·
-                    {{ section.name }}
-                    ·
-                    {{ section.semester.name }}
-                    {{ section.semester.school_year }}
-                </p>
+                <div>
+                    <h1 class="text-2xl font-semibold">Assignments</h1>
+                    <p class="text-sm text-muted-foreground">
+                        {{ section.subject.code }} · {{ section.name }} ·
+                        {{ section.semester.name }} {{ section.semester.school_year }}
+                    </p>
+                </div>
             </div>
 
             <Button as-child>
@@ -619,7 +615,7 @@ onMounted(() => {
                         as-child
                     >
                         <Link
-                            :href="`/assignments/${row.id}/edit`"
+                            :href="`/assignments/${row.id}/edit?back=assignments`"
                         >
                             <Pencil
                                 class="h-4 w-4"

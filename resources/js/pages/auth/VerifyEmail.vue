@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import AuthStatusMessage from '@/components/AuthStatusMessage.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -22,13 +23,11 @@ defineProps<{
 <template>
     <Head title="Email verification" />
 
-    <div
+    <AuthStatusMessage
         v-if="status === 'verification-link-sent'"
-        class="mb-4 text-center text-sm font-medium text-green-600"
-    >
-        A new verification link has been sent to the email address you provided
-        during registration.
-    </div>
+        class="mb-4 text-center"
+        message="A new verification link has been sent to the email address you provided during registration."
+    />
 
     <Form
         v-bind="send.form()"

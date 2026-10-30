@@ -7,7 +7,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-sans: Instrument Sans, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans:
+        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
@@ -46,22 +49,172 @@
 }
 
 @layer base {
-    *, ::after, ::before, ::backdrop, ::file-selector-button {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
         border-color: var(--color-gray-200, currentColor);
     }
 }
 
+.rich-text-content :is(p, h2, h3, ul, ol) {
+    margin-block: 0.75rem;
+}
+
+.rich-text-content :is(h2, h3) {
+    color: var(--foreground);
+    font-weight: 600;
+}
+
+.rich-text-content h2 {
+    font-size: 1.125rem;
+}
+
+.rich-text-content h3 {
+    font-size: 1rem;
+}
+
+.rich-text-content :is(ul, ol) {
+    padding-inline-start: 1.5rem;
+}
+
+.rich-text-content ul {
+    list-style: disc;
+}
+
+.rich-text-content ol {
+    list-style: decimal;
+}
+
+.rich-text-content a {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
 @layer utilities {
-    body, html {
-        --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    body,
+    html {
+        --font-sans:
+            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+            'Noto Color Emoji';
     }
-    .brand-gradient { background: linear-gradient(135deg, #7da78c 0%, #e8f5bd 100%); }
-    .brand-gradient-reverse { background: linear-gradient(135deg, #e8f5bd 0%, #7da78c 100%); }
+    .brand-gradient {
+        background: linear-gradient(135deg, #7da78c 0%, #e8f5bd 100%);
+    }
+
+    .dark .brand-gradient {
+        background: linear-gradient(135deg, hsl(142 28% 24%), hsl(74 42% 34%));
+    }
+    .brand-gradient-reverse {
+        background: linear-gradient(135deg, #e8f5bd 0%, #7da78c 100%);
+    }
     .brand-gradient-text {
         background: linear-gradient(135deg, #4a7a5e 0%, #7da78c 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+    }
+
+    .dark .brand-gradient-text {
+        background: linear-gradient(135deg, hsl(142 38% 76%), hsl(74 68% 78%));
+        -webkit-background-clip: text;
+        background-clip: text;
+    }
+
+    .brand-cta-text {
+        color: hsl(142 30% 12%);
+    }
+    .dark .brand-cta-text {
+        color: hsl(80 30% 95%);
+    }
+    .brand-cta-muted {
+        color: hsl(142 25% 28%);
+    }
+    .dark .brand-cta-muted {
+        color: hsl(80 25% 82%);
+    }
+    .brand-cta-surface {
+        border-color: hsl(142 30% 40%);
+        background-color: hsl(0 0% 100% / 0.9);
+        color: hsl(142 30% 15%);
+    }
+    .brand-cta-surface:hover {
+        background-color: hsl(0 0% 100%);
+    }
+    .dark .brand-cta-surface {
+        border-color: hsl(74 45% 50%);
+        background-color: hsl(142 25% 12% / 0.9);
+        color: hsl(80 20% 95%);
+    }
+    .dark .brand-cta-surface:hover {
+        background-color: hsl(142 25% 16%);
+    }
+
+    .landing-fade-up {
+        animation: landingFadeUp 0.8s ease-out both;
+    }
+    .landing-fade-in {
+        animation: landingFadeIn 0.8s ease-out both;
+    }
+    .landing-float {
+        animation: landingFloat 5s ease-in-out infinite;
+    }
+    .landing-glow {
+        animation: landingGlow 3s ease-in-out infinite;
+    }
+    .landing-reveal {
+        opacity: 1;
+        transform: none;
+        transition:
+            opacity 0.7s ease,
+            transform 0.7s ease;
+    }
+    .landing-reveal-pending {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    .landing-reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    @keyframes landingFadeUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    @keyframes landingFadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    @keyframes landingFloat {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-8px);
+        }
+    }
+    @keyframes landingGlow {
+        0%,
+        100% {
+            opacity: 0.08;
+        }
+        50% {
+            opacity: 0.16;
+        }
     }
 }
 
@@ -139,8 +292,12 @@
 }
 
 @layer base {
-    * { @apply border-border outline-ring/50; }
-    body { @apply bg-background text-foreground; }
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -151,5 +308,13 @@
         transition-duration: 0.01ms !important;
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
+    }
+
+    .landing-reveal,
+    .landing-reveal-pending,
+    .landing-reveal.is-visible {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
     }
 }

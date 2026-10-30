@@ -11,6 +11,31 @@ use Illuminate\Support\Facades\Log;
 
 class AIGraderService
 {
+    public function __construct(private readonly RichTextSanitizer $richText)
+    {
+        $settings = AiSetting::current();
+        $provider = AiProviderConfig::active();
+
+        $this->enabled = $settings->enabled;
+        $this->provider = $provider?->provider ?? 'gemini';
+        $this->apiKey = $provider?->resolvedApiKey() ?? config('services.gemini.key', '');
+        $this->model = $provider?->selected_model ?? config('services.gemini.model', 'gemini-3-flash-preview');
+        $this->temperature = (float) $settings->temperature;
+        $this->maxOutputTokens = $settings->max_output_tokens;
+        $this->includeAssignmentInstructions = $settings->include_assignment_instructions;
+        $this->includeRubric = $settings->include_rubric;
+        $this->contextEnabled = $settings->context_enabled;
+        $this->globalContext = $settings->global_context;
+        $this->essayContext = $settings->essay_context;
+        $this->codeContext = $settings->code_context;
+        $this->plagiarismContext = $settings->plagiarism_context;
+    }
+
+    public function toPlainText(?string $value): string
+    {
+        return $this->richText->toPlainText($value);
+    }
+
     private string $apiKey;
 
     private string $provider;
@@ -38,26 +63,6 @@ class AIGraderService
     private ?string $codeContext = null;
 
     private ?string $plagiarismContext = null;
-
-    public function __construct()
-    {
-        $settings = AiSetting::current();
-        $provider = AiProviderConfig::active();
-
-        $this->enabled = $settings->enabled;
-        $this->provider = $provider?->provider ?? 'gemini';
-        $this->apiKey = $provider?->resolvedApiKey() ?? config('services.gemini.key', '');
-        $this->model = $provider?->selected_model ?? config('services.gemini.model', 'gemini-3-flash-preview');
-        $this->temperature = (float) $settings->temperature;
-        $this->maxOutputTokens = $settings->max_output_tokens;
-        $this->includeAssignmentInstructions = $settings->include_assignment_instructions;
-        $this->includeRubric = $settings->include_rubric;
-        $this->contextEnabled = $settings->context_enabled;
-        $this->globalContext = $settings->global_context;
-        $this->essayContext = $settings->essay_context;
-        $this->codeContext = $settings->code_context;
-        $this->plagiarismContext = $settings->plagiarism_context;
-    }
 
     public function modelUsed(): string
     {
@@ -331,6 +336,8 @@ PROMPT;
         float $maxScore,
         bool $includeErrorCode = false
     ): array {
+        $instructions = $this->toPlainText($instructions);
+        $rubric = $this->toPlainText($rubric);
         $context = $this->contextBlock($this->essayContext);
         $instructionsBlock = $this->includeAssignmentInstructions ? "**Instructions:** {$instructions}" : '**Instructions:** Not included by AI settings.';
         $rubricBlock = $this->includeRubric ? "**Rubric/Criteria:** {$rubric}" : '**Rubric/Criteria:** Not included by AI settings.';
@@ -375,6 +382,8 @@ PROMPT;
         float $maxScore,
         bool $includeErrorCode = false
     ): array {
+        $instructions = $this->toPlainText($instructions);
+        $rubric = $this->toPlainText($rubric);
         $context = $this->contextBlock($this->codeContext);
         $instructionsBlock = $this->includeAssignmentInstructions ? "**Problem Description:** {$instructions}" : '**Problem Description:** Not included by AI settings.';
         $rubricBlock = $this->includeRubric ? "**Expected Behavior / Test Cases:** {$rubric}" : '**Expected Behavior / Test Cases:** Not included by AI settings.';

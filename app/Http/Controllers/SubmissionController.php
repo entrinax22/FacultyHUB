@@ -104,6 +104,9 @@ class SubmissionController extends Controller
 
                         'proctoring_enabled' =>
                             (bool) $assignment->proctoring_enabled,
+
+                        'allow_question_skipping' =>
+                            (bool) $assignment->allow_question_skipping,
                     ]
                     : null,
             ]

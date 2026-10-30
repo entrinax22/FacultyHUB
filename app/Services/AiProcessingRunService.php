@@ -413,8 +413,8 @@ class AiProcessingRunService
         $estimatedTokens = max(1, (int) ceil((
             strlen($work->content)
             + strlen((string) $assignment->title)
-            + strlen((string) $assignment->instructions)
-            + strlen((string) $assignment->rubric)
+            + strlen($ai->toPlainText($assignment->instructions))
+            + strlen($ai->toPlainText($assignment->rubric))
         ) / 4));
 
         if (! $this->reserveGradingBudget($ai->modelUsed(), $estimatedTokens)) {
@@ -426,8 +426,8 @@ class AiProcessingRunService
         $result = $assignment->type === 'code'
             ? $ai->gradeCode(
                 $assignment->title,
-                (string) $assignment->instructions,
-                (string) $assignment->rubric,
+                $ai->toPlainText($assignment->instructions),
+                $ai->toPlainText($assignment->rubric),
                 $work->content,
                 (string) $assignment->language,
                 (float) $assignment->max_score,
@@ -435,8 +435,8 @@ class AiProcessingRunService
             )
             : $ai->gradeEssay(
                 $assignment->title,
-                (string) $assignment->instructions,
-                (string) $assignment->rubric,
+                $ai->toPlainText($assignment->instructions),
+                $ai->toPlainText($assignment->rubric),
                 $work->content,
                 (float) $assignment->max_score,
                 true

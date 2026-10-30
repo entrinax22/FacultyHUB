@@ -12,6 +12,7 @@ class Assignment extends Model
         'rubric', 'language', 'answer_release_at',
         'duration_minutes',
         'proctoring_enabled',
+        'allow_question_skipping',
         'plagiarism_published_run_id',
     ];
 
@@ -23,6 +24,7 @@ class Assignment extends Model
         'passing_score' => 'float',
         'duration_minutes' => 'integer',
         'proctoring_enabled' => 'boolean',
+        'allow_question_skipping' => 'boolean',
     ];
 
     public function section()

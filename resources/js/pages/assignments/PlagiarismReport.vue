@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
-import { AlertTriangle, ArrowLeft, BarChart2, CheckCircle2, Play, RefreshCw, XCircle } from 'lucide-vue-next';
+import { AlertTriangle, BarChart2, CheckCircle2, Play, RefreshCw, XCircle } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { showApiError, showApiToast, showApiWarning } from '@/lib/flashToast';
@@ -112,11 +113,14 @@ onMounted(refresh);
 <template>
     <Head :title="'Plagiarism Report — ' + (assignment?.title ?? 'Assignment')" />
     <div class="flex h-full flex-1 flex-col gap-6 p-4 sm:p-6">
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/assignments/${props.assignmentId}`"
+            label="Back to Assignment"
+        />
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex items-start gap-3">
-                <Button variant="ghost" size="sm" as-child class="-ml-2 mt-0.5">
-                    <Link :href="assignment ? '/assignments/' + assignment.id : '/sections'"><ArrowLeft class="h-4 w-4" /></Link>
-                </Button>
+
                 <div>
                     <h1 class="text-xl font-semibold">Plagiarism analysis</h1>
                     <p class="text-sm text-muted-foreground">{{ assignment?.title ?? 'Loading assignment…' }}<template v-if="assignment?.section?.subject"> · {{ assignment.section.subject.code }}</template></p>

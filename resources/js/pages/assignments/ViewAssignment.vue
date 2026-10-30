@@ -2,7 +2,6 @@
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import {
-    ArrowLeft,
     BarChart2,
     CheckCircle2,
     ClipboardList,
@@ -13,17 +12,19 @@ import {
     Search,
     ShieldCheck,
 } from 'lucide-vue-next';
-import { onMounted, ref } from 'vue';
-
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import AiGradingPanel from '@/components/AiGradingPanel.vue';
+import AssignmentQuestionReview from '@/components/assignments/AssignmentQuestionReview.vue';
 import BaseTable from '@/components/BaseTable.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { showApiError, showApiToast } from '@/lib/flashToast';
+import { sanitizeRichText } from '@/lib/richText';
 
 /*
 |--------------------------------------------------------------------------
@@ -119,9 +120,7 @@ type AiFeedback = {
 type ProctoringEvent = {
     id: string;
     event_type: string;
-    metadata:
-        | Record<string, string | number | boolean>
-        | null;
+    metadata: Record<string, string | number | boolean> | null;
     created_at: string;
 };
 
@@ -213,12 +212,14 @@ function formatDate(value: string | null): string {
 
 function typeLabel(type: string): string {
     return (
-        {
-            essay: 'Essay',
-            mcq: 'Multiple Choice',
-            code: 'Code Assignment',
-        } as Record<string, string>
-    )[type] ?? type;
+        (
+            {
+                essay: 'Essay',
+                mcq: 'Multiple Choice',
+                code: 'Code Assignment',
+            } as Record<string, string>
+        )[type] ?? type
+    );
 }
 
 function categoryLabel(category: string | null): string {
@@ -227,13 +228,15 @@ function categoryLabel(category: string | null): string {
     }
 
     return (
-        {
-            quiz: 'Quiz',
-            exam: 'Exam',
-            activity: 'Activity',
-            project: 'Project',
-        } as Record<string, string>
-    )[category] ?? category;
+        (
+            {
+                quiz: 'Quiz',
+                exam: 'Exam',
+                activity: 'Activity',
+                project: 'Project',
+            } as Record<string, string>
+        )[category] ?? category
+    );
 }
 
 function periodLabel(period: string | null): string {
@@ -242,11 +245,13 @@ function periodLabel(period: string | null): string {
     }
 
     return (
-        {
-            midterm: 'Midterm',
-            finals: 'Finals',
-        } as Record<string, string>
-    )[period] ?? period;
+        (
+            {
+                midterm: 'Midterm',
+                finals: 'Finals',
+            } as Record<string, string>
+        )[period] ?? period
+    );
 }
 
 function moduleTitle(): string {
@@ -282,6 +287,31 @@ const error = ref<string | null>(null);
 const processingRelease = ref(false);
 
 const expandedSubmissionId = ref<string | null>(null);
+
+const instructionsContent = ref<HTMLElement | null>(null);
+
+const instructionsExpanded = ref(false);
+
+const instructionsOverflow = ref(false);
+
+const instructionsPreviewHeight = ref(168);
+
+let instructionsResizeObserver: ResizeObserver | undefined;
+
+function measureInstructions() {
+    const element = instructionsContent.value;
+
+    if (!element) {
+        return;
+    }
+
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+    instructionsPreviewHeight.value = Number.isFinite(lineHeight)
+        ? Math.ceil(lineHeight * 6)
+        : 168;
+    instructionsOverflow.value =
+        element.scrollHeight > instructionsPreviewHeight.value + 1;
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -332,10 +362,7 @@ const columns = [
 |--------------------------------------------------------------------------
 */
 
-const statusVariant: Record<
-    string,
-    'default' | 'secondary' | 'outline'
-> = {
+const statusVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
     pending: 'secondary',
     grading: 'outline',
     graded: 'default',
@@ -348,51 +375,37 @@ const statusVariant: Record<
 |--------------------------------------------------------------------------
 */
 
-async function loadSubmissions(
-    page = 1,
-    perPage?: number,
-) {
+async function loadSubmissions(page = 1, perPage?: number) {
     loading.value = true;
 
     error.value = null;
 
     try {
-        const response =
-            await axios.get<SubmissionsResponse>(
-                `/assignments/${props.assignment.id}/submissions/data`,
-                {
-                    params: {
-                        page,
+        const response = await axios.get<SubmissionsResponse>(
+            `/assignments/${props.assignment.id}/submissions/data`,
+            {
+                params: {
+                    page,
 
-                        per_page:
-                            perPage ??
-                            pagination.value?.per_page ??
-                            20,
+                    per_page: perPage ?? pagination.value?.per_page ?? 20,
 
-                        search:
-                            search.value || undefined,
-                    },
+                    search: search.value || undefined,
                 },
-            );
+            },
+        );
 
         if (response.data.success) {
-            submissions.value =
-                response.data.data;
+            submissions.value = response.data.data;
 
-            pagination.value =
-                response.data.pagination;
+            pagination.value = response.data.pagination;
 
             updateCounts();
         } else {
             error.value =
-                response.data.message ||
-                'Failed to load submissions.';
+                response.data.message || 'Failed to load submissions.';
         }
     } catch (err: any) {
-        console.error(
-            'LOAD SUBMISSIONS ERROR:',
-            err,
-        );
+        console.error('LOAD SUBMISSIONS ERROR:', err);
 
         error.value =
             err.response?.data?.message ||
@@ -445,35 +458,22 @@ function changePerPage(perPage: number) {
 */
 
 async function releaseAll() {
-    if (
-        !confirm(
-            'Release all grades to students?',
-        )
-    ) {
+    if (!confirm('Release all grades to students?')) {
         return;
     }
 
     processingRelease.value = true;
 
     try {
-        const response = await axios.post(
-            '/grades/release',
-            {
-                assignment_id:
-                    props.assignment.id,
-            },
-        );
+        const response = await axios.post('/grades/release', {
+            assignment_id: props.assignment.id,
+        });
 
         showApiToast(response);
 
-        await loadSubmissions(
-            pagination.value?.current_page ?? 1,
-        );
+        await loadSubmissions(pagination.value?.current_page ?? 1);
     } catch (error) {
-        console.error(
-            'RELEASE GRADES ERROR:',
-            error,
-        );
+        console.error('RELEASE GRADES ERROR:', error);
 
         showApiError(error);
     } finally {
@@ -487,57 +487,39 @@ async function releaseAll() {
 |--------------------------------------------------------------------------
 */
 
-function toggleAlerts(
-    submissionId: string,
-) {
+function toggleAlerts(submissionId: string) {
     expandedSubmissionId.value =
-        expandedSubmissionId.value ===
-        submissionId
-            ? null
-            : submissionId;
+        expandedSubmissionId.value === submissionId ? null : submissionId;
 }
 
-function eventLabel(
-    eventType: string,
-): string {
+function eventLabel(eventType: string): string {
     return (
-        {
-            tab_hidden: 'Left exam tab',
-            tab_visible: 'Returned to exam tab',
-            window_resized: 'Window resized',
-            camera_permission_denied:
-                'Camera permission denied',
-            exam_started: 'Exam started',
-            heartbeat: 'Connection heartbeat',
-            fullscreen_entered:
-                'Fullscreen enabled',
-            fullscreen_exited:
-                'Fullscreen exited',
-            copy_detected: 'Content copied',
-            paste_detected: 'Content pasted',
-            cut_detected: 'Content cut',
-            context_menu_used:
-                'Context menu used',
-            print_screen_suspected:
-                'Possible screenshot shortcut detected',
-        } as Record<string, string>
-    )[eventType] ?? eventType;
+        (
+            {
+                tab_hidden: 'Left exam tab',
+                tab_visible: 'Returned to exam tab',
+                window_resized: 'Window resized',
+                camera_permission_denied: 'Camera permission denied',
+                exam_started: 'Exam started',
+                heartbeat: 'Connection heartbeat',
+                fullscreen_entered: 'Fullscreen enabled',
+                fullscreen_exited: 'Fullscreen exited',
+                copy_detected: 'Content copied',
+                paste_detected: 'Content pasted',
+                cut_detected: 'Content cut',
+                context_menu_used: 'Context menu used',
+                print_screen_suspected: 'Possible screenshot shortcut detected',
+            } as Record<string, string>
+        )[eventType] ?? eventType
+    );
 }
 
-function eventMetadata(
-    event: ProctoringEvent,
-): string {
-    if (
-        event.event_type !==
-            'window_resized' ||
-        !event.metadata
-    ) {
+function eventMetadata(event: ProctoringEvent): string {
+    if (event.event_type !== 'window_resized' || !event.metadata) {
         return '';
     }
 
-    return `${event.metadata.width ?? '?'} × ${
-        event.metadata.height ?? '?'
-    }`;
+    return `${event.metadata.width ?? '?'} × ${event.metadata.height ?? '?'}`;
 }
 
 /*
@@ -551,23 +533,13 @@ const approvedCount = ref(0);
 const gradedCount = ref(0);
 
 function updateCounts() {
-    approvedCount.value =
-        submissions.value.filter(
-            (submission) =>
-                submission.status ===
-                'approved',
-        ).length;
+    approvedCount.value = submissions.value.filter(
+        (submission) => submission.status === 'approved',
+    ).length;
 
-    gradedCount.value =
-        submissions.value.filter(
-            (submission) =>
-                [
-                    'graded',
-                    'approved',
-                ].includes(
-                    submission.status,
-                ),
-        ).length;
+    gradedCount.value = submissions.value.filter((submission) =>
+        ['graded', 'approved'].includes(submission.status),
+    ).length;
 }
 
 /*
@@ -576,21 +548,33 @@ function updateCounts() {
 |--------------------------------------------------------------------------
 */
 
-onMounted(() => {
+onMounted(async () => {
     loadSubmissions();
+    await nextTick();
+    measureInstructions();
+
+    if (instructionsContent.value && typeof ResizeObserver !== 'undefined') {
+        instructionsResizeObserver = new ResizeObserver(measureInstructions);
+        instructionsResizeObserver.observe(instructionsContent.value);
+    }
 });
+
+onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
 </script>
 
 <template>
     <Head :title="`View - ${assignment.title}`" />
 
-    <div
-        class="flex h-full flex-1 flex-col gap-6 p-4"
-    >
+    <div class="flex h-full flex-1 flex-col gap-6 p-4">
         <!-- ============================================================ -->
         <!-- Header -->
         <!-- ============================================================ -->
 
+        <SectionBackLink
+            class="-mb-3"
+            :href="assignment.section?.id ? `/sections/${assignment.section.id}/assignments` : '/sections'"
+            label="Back to Assignments"
+        />
         <div
             class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
         >
@@ -598,18 +582,12 @@ onMounted(() => {
                 <div
                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
                 >
-                    <ClipboardList
-                        class="h-5 w-5 text-primary"
-                    />
+                    <ClipboardList class="h-5 w-5 text-primary" />
                 </div>
 
                 <div>
-                    <div
-                        class="flex flex-wrap items-center gap-2"
-                    >
-                        <h1
-                            class="text-xl font-semibold"
-                        >
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h1 class="text-xl font-semibold">
                             {{ assignment.title }}
                         </h1>
 
@@ -621,76 +599,27 @@ onMounted(() => {
                             "
                         >
                             {{
-                                assignment.is_published
-                                    ? 'Published'
-                                    : 'Draft'
+                                assignment.is_published ? 'Published' : 'Draft'
                             }}
                         </Badge>
                     </div>
 
-                    <p
-                        class="mt-1 text-sm text-muted-foreground"
-                    >
-                        {{
-                            assignment.section
-                                ?.subject?.code ??
-                            'No subject'
-                        }}
+                    <p class="mt-1 text-sm text-muted-foreground">
+                        {{ assignment.section?.subject?.code ?? 'No subject' }}
                         ·
-                        {{
-                            assignment.section
-                                ?.name ??
-                            'No section'
-                        }}
+                        {{ assignment.section?.name ?? 'No section' }}
                         ·
-                        {{
-                            assignment.section
-                                ?.subject?.name ??
-                            'No subject'
-                        }}
+                        {{ assignment.section?.subject?.name ?? 'No subject' }}
                     </p>
                 </div>
             </div>
 
-            <div class="flex gap-2">
-                <Button
-                    variant="outline"
-                    size="sm"
-                    as-child
-                >
-                    <Link
-                        v-if="
-                            assignment.section?.id
-                        "
-                        :href="`/sections/${assignment.section.id}/assignments`"
-                    >
-                        <ArrowLeft
-                            class="mr-1.5 h-4 w-4"
-                        />
-                        Back
-                    </Link>
+            <div class="flex flex-wrap gap-2">
 
-                    <Link
-                        v-else
-                        href="/sections"
-                    >
-                        <ArrowLeft
-                            class="mr-1.5 h-4 w-4"
-                        />
-                        Back
-                    </Link>
-                </Button>
 
-                <Button
-                    size="sm"
-                    as-child
-                >
-                    <Link
-                        :href="`/assignments/${assignment.id}/edit`"
-                    >
-                        <Edit
-                            class="mr-1.5 h-4 w-4"
-                        />
+                <Button size="sm" as-child>
+                    <Link :href="`/assignments/${assignment.id}/edit?back=assignment`">
+                        <Edit class="mr-1.5 h-4 w-4" />
                         Edit Assignment
                     </Link>
                 </Button>
@@ -701,14 +630,10 @@ onMounted(() => {
         <!-- Assignment Overview -->
         <!-- ============================================================ -->
 
-        <div
-            class="grid gap-4 lg:grid-cols-3"
-        >
+        <div class="grid items-start gap-4 lg:grid-cols-3">
             <!-- Main Information -->
 
-            <div
-                class="space-y-7 rounded-xl border bg-card p-5 lg:col-span-2"
-            >
+            <div class="space-y-7 rounded-xl border bg-card p-5 lg:col-span-2">
                 <!-- Assignment Header -->
 
                 <div>
@@ -718,9 +643,7 @@ onMounted(() => {
                         Assignment
                     </p>
 
-                    <h2
-                        class="mt-1 text-lg font-semibold"
-                    >
+                    <h2 class="mt-1 text-lg font-semibold">
                         {{ assignment.title }}
                     </h2>
                 </div>
@@ -728,70 +651,79 @@ onMounted(() => {
                 <!-- Instructions -->
 
                 <div class="space-y-3">
-                    <div
-                        class="flex items-center gap-2"
-                    >
-                        <FileText
-                            class="h-4 w-4 text-primary"
-                        />
+                    <div class="flex items-center gap-2">
+                        <FileText class="h-4 w-4 text-primary" />
 
-                        <h3
-                            class="text-sm font-semibold"
-                        >
-                            Instructions
-                        </h3>
+                        <h3 class="text-sm font-semibold">Instructions</h3>
                     </div>
 
                     <div class="pl-6">
-                        <p
-                            class="text-sm leading-7 whitespace-pre-wrap text-muted-foreground"
+                        <div
+                            id="assignment-instructions-content"
+                            ref="instructionsContent"
+                            class="rich-text-content text-sm leading-7 text-muted-foreground"
+                            :class="{
+                                'overflow-hidden':
+                                    instructionsOverflow &&
+                                    !instructionsExpanded,
+                            }"
+                            :style="{
+                                maxHeight:
+                                    instructionsOverflow &&
+                                    !instructionsExpanded
+                                        ? `${instructionsPreviewHeight}px`
+                                        : undefined,
+                            }"
+                            v-html="
+                                sanitizeRichText(
+                                    assignment.instructions ||
+                                        'No instructions provided.',
+                                )
+                            "
+                        />
+                        <button
+                            v-if="instructionsOverflow"
+                            type="button"
+                            class="ml-6 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+                            aria-controls="assignment-instructions-content"
+                            :aria-expanded="instructionsExpanded"
+                            @click="
+                                instructionsExpanded = !instructionsExpanded
+                            "
                         >
                             {{
-                                assignment.instructions ||
-                                'No instructions provided.'
+                                instructionsExpanded ? 'Show less' : 'Show more'
                             }}
-                        </p>
+                        </button>
                     </div>
                 </div>
 
                 <!-- Rubric -->
 
                 <div
-                    v-if="
-                        assignment.rubric &&
-                        assignment.type !== 'mcq'
-                    "
+                    v-if="assignment.rubric && assignment.type !== 'mcq'"
                     class="space-y-3"
                 >
-                    <div
-                        class="flex items-center gap-2"
-                    >
-                        <FileText
-                            class="h-4 w-4 text-primary"
-                        />
+                    <div class="flex items-center gap-2">
+                        <FileText class="h-4 w-4 text-primary" />
 
-                        <h3
-                            class="text-sm font-semibold"
-                        >
+                        <h3 class="text-sm font-semibold">
                             Rubric / Grading Criteria
                         </h3>
                     </div>
 
                     <div class="pl-6">
-                        <p
-                            class="text-sm leading-7 whitespace-pre-wrap text-muted-foreground"
-                        >
-                            {{ assignment.rubric }}
-                        </p>
+                        <div
+                            class="rich-text-content text-sm leading-7 text-muted-foreground"
+                            v-html="sanitizeRichText(assignment.rubric)"
+                        />
                     </div>
                 </div>
             </div>
 
             <!-- Assignment Details -->
 
-            <div
-                class="space-y-4 rounded-xl border bg-card p-5"
-            >
+            <div class="space-y-4 rounded-xl border bg-card p-5">
                 <div>
                     <p
                         class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
@@ -799,168 +731,95 @@ onMounted(() => {
                         Details
                     </p>
 
-                    <h2
-                        class="mt-1 font-semibold"
-                    >
-                        Assignment Information
-                    </h2>
+                    <h2 class="mt-1 font-semibold">Assignment Information</h2>
                 </div>
 
                 <div class="space-y-3">
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Type
                         </span>
 
                         <Badge variant="outline">
-                            {{
-                                typeLabel(
-                                    assignment.type,
-                                )
-                            }}
+                            {{ typeLabel(assignment.type) }}
                         </Badge>
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Category
                         </span>
 
-                        <span
-                            class="text-sm font-medium capitalize"
-                        >
-                            {{
-                                categoryLabel(
-                                    assignment.category,
-                                )
-                            }}
+                        <span class="text-sm font-medium capitalize">
+                            {{ categoryLabel(assignment.category) }}
                         </span>
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Period
                         </span>
 
-                        <span
-                            class="text-sm font-medium capitalize"
-                        >
-                            {{
-                                periodLabel(
-                                    assignment.period,
-                                )
-                            }}
+                        <span class="text-sm font-medium capitalize">
+                            {{ periodLabel(assignment.period) }}
                         </span>
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Max Score
                         </span>
 
-                        <span
-                            class="text-sm font-semibold"
-                        >
+                        <span class="text-sm font-semibold">
                             {{ assignment.max_score }}
                         </span>
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Passing Score
                         </span>
 
-                        <span
-                            class="text-sm font-medium"
-                        >
-                            {{
-                                assignment.passing_score ??
-                                'Not set'
-                            }}
+                        <span class="text-sm font-medium">
+                            {{ assignment.passing_score ?? 'Not set' }}
                         </span>
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-4"
-                    >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                    <div class="flex items-center justify-between gap-4">
+                        <span class="text-sm text-muted-foreground">
                             Due Date
                         </span>
 
-                        <span
-                            class="text-right text-sm font-medium"
-                        >
-                            {{
-                                formatDate(
-                                    assignment.due_date,
-                                )
-                            }}
+                        <span class="text-right text-sm font-medium">
+                            {{ formatDate(assignment.due_date) }}
                         </span>
                     </div>
 
                     <div
-                        v-if="
-                            assignment.type ===
-                            'mcq'
-                        "
+                        v-if="assignment.type === 'mcq'"
                         class="flex items-center justify-between gap-4"
                     >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                        <span class="text-sm text-muted-foreground">
                             Answer Release
                         </span>
 
-                        <span
-                            class="text-right text-sm font-medium"
-                        >
-                            {{
-                                formatDate(
-                                    assignment.answer_release_at,
-                                )
-                            }}
+                        <span class="text-right text-sm font-medium">
+                            {{ formatDate(assignment.answer_release_at) }}
                         </span>
                     </div>
 
                     <div
                         v-if="
-                            assignment.category ===
-                                'exam' ||
+                            assignment.category === 'exam' ||
                             assignment.proctoring_enabled
                         "
                         class="flex items-center justify-between gap-4"
                     >
-                        <span
-                            class="text-sm text-muted-foreground"
-                        >
+                        <span class="text-sm text-muted-foreground">
                             Duration
                         </span>
 
-                        <span
-                            class="text-sm font-medium"
-                        >
+                        <span class="text-sm font-medium">
                             {{
                                 assignment.duration_minutes
                                     ? `${assignment.duration_minutes} minutes`
@@ -976,57 +835,35 @@ onMounted(() => {
         <!-- Additional Settings -->
         <!-- ============================================================ -->
 
-        <div
-            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <!-- Grading Component -->
 
-            <div
-                class="rounded-xl border p-4"
-            >
-                <div
-                    class="mb-2 flex items-center gap-2"
-                >
-                    <FileText
-                        class="h-4 w-4 text-muted-foreground"
-                    />
+            <div class="rounded-xl border p-4">
+                <div class="mb-2 flex items-center gap-2">
+                    <FileText class="h-4 w-4 text-muted-foreground" />
 
-                    <span
-                        class="text-xs text-muted-foreground"
-                    >
+                    <span class="text-xs text-muted-foreground">
                         Grading Component
                     </span>
                 </div>
 
-                <p
-                    class="text-sm font-medium"
-                >
+                <p class="text-sm font-medium">
                     {{ componentName() }}
                 </p>
             </div>
 
             <!-- Linked Module -->
 
-            <div
-                class="rounded-xl border p-4"
-            >
-                <div
-                    class="mb-2 flex items-center gap-2"
-                >
-                    <FileText
-                        class="h-4 w-4 text-muted-foreground"
-                    />
+            <div class="rounded-xl border p-4">
+                <div class="mb-2 flex items-center gap-2">
+                    <FileText class="h-4 w-4 text-muted-foreground" />
 
-                    <span
-                        class="text-xs text-muted-foreground"
-                    >
+                    <span class="text-xs text-muted-foreground">
                         Linked Module
                     </span>
                 </div>
 
-                <p
-                    class="text-sm font-medium"
-                >
+                <p class="text-sm font-medium">
                     {{ moduleTitle() }}
                 </p>
             </div>
@@ -1034,62 +871,35 @@ onMounted(() => {
             <!-- Programming Language -->
 
             <div
-                v-if="
-                    assignment.type === 'code'
-                "
+                v-if="assignment.type === 'code'"
                 class="rounded-xl border p-4"
             >
-                <div
-                    class="mb-2 flex items-center gap-2"
-                >
-                    <FileText
-                        class="h-4 w-4 text-muted-foreground"
-                    />
+                <div class="mb-2 flex items-center gap-2">
+                    <FileText class="h-4 w-4 text-muted-foreground" />
 
-                    <span
-                        class="text-xs text-muted-foreground"
-                    >
+                    <span class="text-xs text-muted-foreground">
                         Programming Language
                     </span>
                 </div>
 
-                <p
-                    class="text-sm font-medium capitalize"
-                >
-                    {{
-                        assignment.language ??
-                        'Not set'
-                    }}
+                <p class="text-sm font-medium capitalize">
+                    {{ assignment.language ?? 'Not set' }}
                 </p>
             </div>
 
             <!-- Exam Monitoring -->
 
-            <div
-                class="rounded-xl border p-4"
-            >
-                <div
-                    class="mb-2 flex items-center gap-2"
-                >
-                    <ShieldCheck
-                        class="h-4 w-4 text-muted-foreground"
-                    />
+            <div class="rounded-xl border p-4">
+                <div class="mb-2 flex items-center gap-2">
+                    <ShieldCheck class="h-4 w-4 text-muted-foreground" />
 
-                    <span
-                        class="text-xs text-muted-foreground"
-                    >
+                    <span class="text-xs text-muted-foreground">
                         Exam Monitoring
                     </span>
                 </div>
 
-                <p
-                    class="text-sm font-medium"
-                >
-                    {{
-                        assignment.proctoring_enabled
-                            ? 'Enabled'
-                            : 'Disabled'
-                    }}
+                <p class="text-sm font-medium">
+                    {{ assignment.proctoring_enabled ? 'Enabled' : 'Disabled' }}
                 </p>
             </div>
         </div>
@@ -1098,215 +908,38 @@ onMounted(() => {
         <!-- MCQ Questions -->
         <!-- ============================================================ -->
 
-        <div
+        <AssignmentQuestionReview
             v-if="assignment.type === 'mcq'"
-            class="space-y-4"
-        >
-            <div
-                class="flex items-center justify-between"
-            >
-                <div>
-                    <h2
-                        class="text-lg font-semibold"
-                    >
-                        Questions
-                    </h2>
-
-                    <p
-                        class="text-sm text-muted-foreground"
-                    >
-                        {{
-                            assignment.questions
-                                .length
-                        }}
-                        question{{
-                            assignment.questions
-                                .length === 1
-                                ? ''
-                                : 's'
-                        }}
-                    </p>
-                </div>
-            </div>
-
-            <div
-                v-if="
-                    assignment.questions
-                        .length === 0
-                "
-                class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
-            >
-                No questions have been added.
-            </div>
-
-            <div
-                v-for="(
-                    question, questionIndex
-                ) in assignment.questions"
-                :key="
-                    question.id ??
-                    questionIndex
-                "
-                class="space-y-3 rounded-xl border bg-card p-5"
-            >
-                <div
-                    class="flex items-start justify-between gap-4"
-                >
-                    <div
-                        class="flex gap-3"
-                    >
-                        <span
-                            class="mt-0.5 text-sm font-semibold text-muted-foreground"
-                        >
-                            Q{{
-                                questionIndex +
-                                1
-                            }}
-                        </span>
-
-                        <p
-                            class="text-sm leading-relaxed font-medium whitespace-pre-wrap"
-                        >
-                            {{
-                                question.question
-                            }}
-                        </p>
-                    </div>
-
-                    <Badge
-                        variant="outline"
-                        class="shrink-0"
-                    >
-                        {{ question.points }}
-                        point{{
-                            question.points ===
-                            1
-                                ? ''
-                                : 's'
-                        }}
-                    </Badge>
-                </div>
-
-                <div
-                    class="space-y-2 pl-7"
-                >
-                    <div
-                        v-for="(
-                            choice,
-                            choiceIndex
-                        ) in question.choices"
-                        :key="
-                            choice.id ??
-                            choiceIndex
-                        "
-                        class="flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm"
-                        :class="
-                            choice.is_correct
-                                ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30'
-                                : ''
-                        "
-                    >
-                        <span
-                            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs"
-                        >
-                            {{
-                                String.fromCharCode(
-                                    65 +
-                                        choiceIndex,
-                                )
-                            }}
-                        </span>
-
-                        <span
-                            class="flex-1"
-                        >
-                            {{
-                                choice.choice_text
-                            }}
-                        </span>
-
-                        <CheckCircle2
-                            v-if="
-                                choice.is_correct
-                            "
-                            class="h-4 w-4 text-green-600"
-                        />
-
-                        <span
-                            v-if="
-                                choice.is_correct
-                            "
-                            class="text-xs font-medium text-green-600 dark:text-green-400"
-                        >
-                            Correct
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
+            :questions="assignment.questions"
+        />
 
         <!-- ============================================================ -->
         <!-- Non-MCQ Content -->
         <!-- ============================================================ -->
 
-        <div
-            v-else
-            class="rounded-xl border bg-card p-5"
-        >
-            <div
-                class="flex items-center gap-2"
-            >
-                <Clock
-                    class="h-4 w-4 text-muted-foreground"
-                />
+        <div v-else class="rounded-xl border bg-card p-5">
+            <div class="flex items-center gap-2">
+                <Clock class="h-4 w-4 text-muted-foreground" />
 
-                <h2
-                    class="font-semibold"
-                >
-                    Submission Information
-                </h2>
+                <h2 class="font-semibold">Submission Information</h2>
             </div>
 
-            <div
-                class="mt-4 grid gap-4 sm:grid-cols-2"
-            >
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>
-                    <p
-                        class="text-xs text-muted-foreground"
-                    >
-                        Assignment Type
-                    </p>
+                    <p class="text-xs text-muted-foreground">Assignment Type</p>
 
-                    <p
-                        class="mt-1 text-sm font-medium"
-                    >
-                        {{
-                            typeLabel(
-                                assignment.type,
-                            )
-                        }}
+                    <p class="mt-1 text-sm font-medium">
+                        {{ typeLabel(assignment.type) }}
                     </p>
                 </div>
 
-                <div
-                    v-if="
-                        assignment.type ===
-                        'code'
-                    "
-                >
-                    <p
-                        class="text-xs text-muted-foreground"
-                    >
+                <div v-if="assignment.type === 'code'">
+                    <p class="text-xs text-muted-foreground">
                         Required Language
                     </p>
 
-                    <p
-                        class="mt-1 text-sm font-medium capitalize"
-                    >
-                        {{
-                            assignment.language ??
-                            'Not specified'
-                        }}
+                    <p class="mt-1 text-sm font-medium capitalize">
+                        {{ assignment.language ?? 'Not specified' }}
                     </p>
                 </div>
             </div>
@@ -1316,71 +949,37 @@ onMounted(() => {
         <!-- Submission Statistics -->
         <!-- ============================================================ -->
 
-        <div
-            class="grid grid-cols-2 gap-3 sm:grid-cols-4"
-        >
-            <div
-                class="rounded-xl border p-3 text-center"
-            >
-                <p
-                    class="text-2xl font-bold"
-                >
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="rounded-xl border p-3 text-center">
+                <p class="text-2xl font-bold">
                     {{ pagination?.total ?? 0 }}
                 </p>
 
-                <p
-                    class="text-xs text-muted-foreground"
-                >
-                    Submitted
-                </p>
+                <p class="text-xs text-muted-foreground">Submitted</p>
             </div>
 
-            <div
-                class="rounded-xl border p-3 text-center"
-            >
-                <p
-                    class="text-2xl font-bold"
-                >
+            <div class="rounded-xl border p-3 text-center">
+                <p class="text-2xl font-bold">
                     {{ gradedCount }}
                 </p>
 
-                <p
-                    class="text-xs text-muted-foreground"
-                >
-                    Graded
-                </p>
+                <p class="text-xs text-muted-foreground">Graded</p>
             </div>
 
-            <div
-                class="rounded-xl border p-3 text-center"
-            >
-                <p
-                    class="text-2xl font-bold"
-                >
+            <div class="rounded-xl border p-3 text-center">
+                <p class="text-2xl font-bold">
                     {{ approvedCount }}
                 </p>
 
-                <p
-                    class="text-xs text-muted-foreground"
-                >
-                    Approved
-                </p>
+                <p class="text-xs text-muted-foreground">Approved</p>
             </div>
 
-            <div
-                class="rounded-xl border p-3 text-center"
-            >
-                <p
-                    class="text-2xl font-bold"
-                >
+            <div class="rounded-xl border p-3 text-center">
+                <p class="text-2xl font-bold">
                     {{ assignment.max_score }}
                 </p>
 
-                <p
-                    class="text-xs text-muted-foreground"
-                >
-                    Max Score
-                </p>
+                <p class="text-xs text-muted-foreground">Max Score</p>
             </div>
         </div>
 
@@ -1388,17 +987,12 @@ onMounted(() => {
         <!-- Submission Actions -->
         <!-- ============================================================ -->
 
-        <div
-            class="flex flex-wrap gap-2"
-        >
+        <div class="flex flex-wrap gap-2">
             <Button
                 v-if="approvedCount > 0"
                 variant="outline"
                 size="sm"
-                :disabled="
-                    processingRelease ||
-                    loading
-                "
+                :disabled="processingRelease || loading"
                 @click="releaseAll"
             >
                 <Loader2
@@ -1406,10 +1000,7 @@ onMounted(() => {
                     class="mr-1.5 h-4 w-4 animate-spin"
                 />
 
-                <CheckCircle2
-                    v-else
-                    class="mr-1.5 h-4 w-4"
-                />
+                <CheckCircle2 v-else class="mr-1.5 h-4 w-4" />
 
                 Release All Grades
             </Button>
@@ -1422,7 +1013,11 @@ onMounted(() => {
             >
                 <Link :href="`/assignments/${assignment.id}/plagiarism`">
                     <BarChart2 class="mr-1.5 h-4 w-4" />
-                    {{ plagiarismRan ? 'View Plagiarism Analysis' : 'Start Plagiarism Analysis' }}
+                    {{
+                        plagiarismRan
+                            ? 'View Plagiarism Analysis'
+                            : 'Start Plagiarism Analysis'
+                    }}
                 </Link>
             </Button>
         </div>
@@ -1440,17 +1035,10 @@ onMounted(() => {
 
         <div class="space-y-4">
             <div>
-                <h2
-                    class="text-lg font-semibold"
-                >
-                    Student Submissions
-                </h2>
+                <h2 class="text-lg font-semibold">Student Submissions</h2>
 
-                <p
-                    class="text-sm text-muted-foreground"
-                >
-                    View and review submissions
-                    for this assignment.
+                <p class="text-sm text-muted-foreground">
+                    View and review submissions for this assignment.
                 </p>
             </div>
 
@@ -1461,56 +1049,36 @@ onMounted(() => {
             <BaseTable
                 :columns="columns"
                 :data="submissions"
-                :pagination="
-                    pagination ?? undefined
-                "
+                :pagination="pagination ?? undefined"
                 empty-text="No submissions yet."
-                :per-page-options="[
-                    10,
-                    20,
-                    25,
-                    50,
-                    100,
-                ]"
+                :per-page-options="[10, 20, 25, 50, 100]"
                 :loading="loading"
                 @update:page="changePage"
-                @update:per-page="
-                    changePerPage
-                "
+                @update:per-page="changePerPage"
             >
                 <!-- ==================================================== -->
                 <!-- Toolbar -->
                 <!-- ==================================================== -->
 
                 <template #toolbar>
-                    <div
-                        class="flex w-full flex-wrap gap-3"
-                    >
-                        <div
-                            class="relative min-w-48 flex-1"
-                        >
+                    <div class="flex w-full flex-wrap gap-3">
+                        <div class="relative min-w-48 flex-1">
                             <Search
                                 class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                             />
 
                             <Input
-                                v-model="
-                                    search
-                                "
+                                v-model="search"
                                 placeholder="Search student..."
                                 class="pl-9"
-                                @keydown.enter="
-                                    applyFilters
-                                "
+                                @keydown.enter="applyFilters"
                             />
                         </div>
 
                         <Button
                             variant="outline"
                             :disabled="loading"
-                            @click="
-                                applyFilters
-                            "
+                            @click="applyFilters"
                         >
                             Search
                         </Button>
@@ -1521,35 +1089,18 @@ onMounted(() => {
                 <!-- Student -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-student="{
-                        row,
-                    }"
-                >
-                    <div
-                        class="flex flex-col"
-                    >
+                <template #cell-student="{ row }">
+                    <div class="flex flex-col">
                         <Link
                             :href="`/submissions/${row.id}/grade`"
                             class="font-medium hover:underline"
                         >
-                            {{
-                                row.student
-                                    .last_name
-                            }},
-                            {{
-                                row.student
-                                    .first_name
-                            }}
+                            {{ row.student.last_name }},
+                            {{ row.student.first_name }}
                         </Link>
 
-                        <span
-                            class="font-mono text-xs text-muted-foreground"
-                        >
-                            {{
-                                row.student
-                                    .student_no
-                            }}
+                        <span class="font-mono text-xs text-muted-foreground">
+                            {{ row.student.student_no }}
                         </span>
                     </div>
                 </template>
@@ -1558,19 +1109,9 @@ onMounted(() => {
                 <!-- Submitted -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-submitted_at="{
-                        row,
-                    }"
-                >
-                    <span
-                        class="text-xs text-muted-foreground"
-                    >
-                        {{
-                            new Date(
-                                row.submitted_at,
-                            ).toLocaleString()
-                        }}
+                <template #cell-submitted_at="{ row }">
+                    <span class="text-xs text-muted-foreground">
+                        {{ new Date(row.submitted_at).toLocaleString() }}
                     </span>
                 </template>
 
@@ -1578,26 +1119,14 @@ onMounted(() => {
                 <!-- Status -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-status="{ row }"
-                >
-                    <div
-                        class="flex justify-center"
-                    >
+                <template #cell-status="{ row }">
+                    <div class="flex justify-center">
                         <Badge
-                            :variant="
-                                statusVariant[
-                                    row.status
-                                ] ??
-                                'secondary'
-                            "
+                            :variant="statusVariant[row.status] ?? 'secondary'"
                             class="capitalize"
                         >
                             <Loader2
-                                v-if="
-                                    row.status ===
-                                    'grading'
-                                "
+                                v-if="row.status === 'grading'"
                                 class="mr-1 h-3 w-3 animate-spin"
                             />
 
@@ -1610,30 +1139,15 @@ onMounted(() => {
                 <!-- AI Score -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-ai_score="{ row }"
-                >
-                    <div
-                        class="text-center text-muted-foreground"
-                    >
-                        <span
-                            v-if="
-                                row.ai_feedback
-                            "
-                        >
-                            {{
-                                row.ai_feedback
-                                    .score
-                            }}
+                <template #cell-ai_score="{ row }">
+                    <div class="text-center text-muted-foreground">
+                        <span v-if="row.ai_feedback">
+                            {{ row.ai_feedback.score }}
                             /
-                            {{
-                                assignment.max_score
-                            }}
+                            {{ assignment.max_score }}
                         </span>
 
-                        <span v-else>
-                            —
-                        </span>
+                        <span v-else> — </span>
                     </div>
                 </template>
 
@@ -1641,35 +1155,15 @@ onMounted(() => {
                 <!-- Final Score -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-final_score="{
-                        row,
-                    }"
-                >
-                    <div
-                        class="text-center"
-                    >
-                        <span
-                            v-if="row.grade"
-                            class="font-semibold"
-                        >
-                            {{
-                                row.grade
-                                    .raw_score
-                            }}
+                <template #cell-final_score="{ row }">
+                    <div class="text-center">
+                        <span v-if="row.grade" class="font-semibold">
+                            {{ row.grade.raw_score }}
                             /
-                            {{
-                                row.grade
-                                    .max_score
-                            }}
+                            {{ row.grade.max_score }}
                         </span>
 
-                        <span
-                            v-else
-                            class="text-muted-foreground"
-                        >
-                            —
-                        </span>
+                        <span v-else class="text-muted-foreground"> — </span>
                     </div>
                 </template>
 
@@ -1677,45 +1171,22 @@ onMounted(() => {
                 <!-- Exam Alerts -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-proctoring_alerts="{
-                        row,
-                    }"
-                >
-                    <div
-                        class="text-center"
-                    >
+                <template #cell-proctoring_alerts="{ row }">
+                    <div class="text-center">
                         <Button
-                            v-if="
-                                row.proctoring_alerts_count >
-                                0
-                            "
+                            v-if="row.proctoring_alerts_count > 0"
                             variant="outline"
                             size="sm"
                             class="text-amber-700 dark:text-amber-300"
-                            @click="
-                                toggleAlerts(
-                                    row.id,
-                                )
-                            "
+                            @click="toggleAlerts(row.id)"
                         >
-                            {{
-                                row.proctoring_alerts_count
-                            }}
+                            {{ row.proctoring_alerts_count }}
                             alert{{
-                                row.proctoring_alerts_count ===
-                                1
-                                    ? ''
-                                    : 's'
+                                row.proctoring_alerts_count === 1 ? '' : 's'
                             }}
                         </Button>
 
-                        <span
-                            v-else
-                            class="text-muted-foreground"
-                        >
-                            None
-                        </span>
+                        <span v-else class="text-muted-foreground"> None </span>
                     </div>
                 </template>
 
@@ -1723,23 +1194,12 @@ onMounted(() => {
                 <!-- Actions -->
                 <!-- ==================================================== -->
 
-                <template
-                    #cell-actions="{ row }"
-                >
-                    <div
-                        class="flex justify-end gap-1"
-                    >
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            as-child
-                        >
-                            <Link
-                                :href="`/submissions/${row.id}/grade`"
-                            >
+                <template #cell-actions="{ row }">
+                    <div class="flex justify-end gap-1">
+                        <Button variant="outline" size="sm" as-child>
+                            <Link :href="`/submissions/${row.id}/grade`">
                                 {{
-                                    row.status ===
-                                    'approved'
+                                    row.status === 'approved'
                                         ? 'View'
                                         : 'Review'
                                 }}
@@ -1758,102 +1218,56 @@ onMounted(() => {
             v-if="expandedSubmissionId"
             class="rounded-xl border bg-amber-50/60 p-4 dark:bg-amber-950/20"
         >
-            <template
-                v-for="sub in submissions"
-                :key="sub.id"
-            >
-                <div
-                    v-if="
-                        expandedSubmissionId ===
-                        sub.id
-                    "
-                >
-                    <div
-                        class="flex items-center justify-between gap-3"
-                    >
+            <template v-for="sub in submissions" :key="sub.id">
+                <div v-if="expandedSubmissionId === sub.id">
+                    <div class="flex items-center justify-between gap-3">
                         <div>
-                            <p
-                                class="font-semibold"
-                            >
-                                Exam activity alerts
-                            </p>
+                            <p class="font-semibold">Exam activity alerts</p>
 
-                            <p
-                                class="text-xs text-muted-foreground"
-                            >
-                                Showing the latest
-                                recorded events for
-                                this student.
+                            <p class="text-xs text-muted-foreground">
+                                Showing the latest recorded events for this
+                                student.
                             </p>
                         </div>
 
-                        <Badge
-                            variant="destructive"
-                        >
-                            {{
-                                sub.proctoring_alerts_count
-                            }}
+                        <Badge variant="destructive">
+                            {{ sub.proctoring_alerts_count }}
                             alerts
                         </Badge>
                     </div>
 
-                    <div
-                        class="mt-3 space-y-2"
-                    >
+                    <div class="mt-3 space-y-2">
                         <div
                             v-for="event in sub.proctoring_events"
                             :key="event.id"
                             class="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
                         >
-                            <span
-                                class="font-medium"
-                            >
-                                {{
-                                    eventLabel(
-                                        event.event_type,
-                                    )
-                                }}
+                            <span class="font-medium">
+                                {{ eventLabel(event.event_type) }}
                             </span>
 
                             <span
-                                v-if="
-                                    eventMetadata(
-                                        event,
-                                    )
-                                "
+                                v-if="eventMetadata(event)"
                                 class="text-xs text-muted-foreground"
                             >
-                                {{
-                                    eventMetadata(
-                                        event,
-                                    )
-                                }}
+                                {{ eventMetadata(event) }}
                             </span>
 
                             <time
                                 class="text-xs text-muted-foreground"
-                                :datetime="
-                                    event.created_at
-                                "
+                                :datetime="event.created_at"
                             >
                                 {{
-                                    new Date(
-                                        event.created_at,
-                                    ).toLocaleString()
+                                    new Date(event.created_at).toLocaleString()
                                 }}
                             </time>
                         </div>
 
                         <p
-                            v-if="
-                                sub
-                                    .proctoring_events
-                                    .length === 0
-                            "
+                            v-if="sub.proctoring_events.length === 0"
                             class="text-sm text-muted-foreground"
                         >
-                            No event details are
-                            available.
+                            No event details are available.
                         </p>
                     </div>
                 </div>
@@ -1864,10 +1278,7 @@ onMounted(() => {
         <!-- Error -->
         <!-- ============================================================ -->
 
-        <div
-            v-if="error"
-            class="text-sm text-destructive"
-        >
+        <div v-if="error" class="text-sm text-destructive">
             {{ error }}
         </div>
     </div>

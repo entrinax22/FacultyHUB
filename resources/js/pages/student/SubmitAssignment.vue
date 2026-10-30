@@ -12,19 +12,12 @@ import {
     ShieldCheck,
     Timer,
 } from 'lucide-vue-next';
-import {
-    computed,
-    onBeforeUnmount,
-    ref,
-    watch,
-} from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    showApiError,
-    showApiToast,
-} from '@/lib/flashToast';
+import { showApiError, showApiToast } from '@/lib/flashToast';
+import { sanitizeRichText } from '@/lib/richText';
 
 /*
 |--------------------------------------------------------------------------
@@ -75,6 +68,7 @@ type Exam = {
     expires_at: string | null;
     terms_accepted_at: string | null;
     proctoring_enabled: boolean;
+    allow_question_skipping: boolean;
 };
 
 type MonitorEvent =
@@ -93,10 +87,7 @@ type MonitorEvent =
 
 type PendingEvent = {
     event_type: MonitorEvent;
-    metadata: Record<
-        string,
-        number | string | boolean
-    >;
+    metadata: Record<string, number | string | boolean>;
 };
 
 /*
@@ -132,24 +123,13 @@ defineOptions({
 |--------------------------------------------------------------------------
 */
 
-const essayContent = ref(
-    props.existing?.content ?? '',
-);
+const essayContent = ref(props.existing?.content ?? '');
 
 const mcqAnswers = ref<Record<string, string>>(
-    props.assignment.type === 'mcq' &&
-        props.existing?.answers
+    props.assignment.type === 'mcq' && props.existing?.answers
         ? Object.fromEntries(
-              Object.entries(
-                  props.existing.answers,
-              ).filter(
-                  (
-                      entry,
-                  ): entry is [
-                      string,
-                      string,
-                  ] =>
-                      entry[1] !== null,
+              Object.entries(props.existing.answers).filter(
+                  (entry): entry is [string, string] => entry[1] !== null,
               ),
           )
         : {},
@@ -164,29 +144,18 @@ const startingExam = ref(false);
 |--------------------------------------------------------------------------
 */
 
-const examStartedAt = ref(
-    props.exam?.started_at ?? null,
-);
+const examStartedAt = ref(props.exam?.started_at ?? null);
 
-const examExpiresAt = ref(
-    props.exam?.expires_at ?? null,
-);
+const examExpiresAt = ref(props.exam?.expires_at ?? null);
 
-const termsAcceptedAt = ref(
-    props.exam?.terms_accepted_at ?? null,
-);
+const termsAcceptedAt = ref(props.exam?.terms_accepted_at ?? null);
 
-const termsAccepted = ref(
-    Boolean(termsAcceptedAt.value),
-);
+const termsAccepted = ref(Boolean(termsAcceptedAt.value));
 
 const remainingSeconds = ref(0);
 
 const examStarted = computed(() =>
-    Boolean(
-        examStartedAt.value &&
-            examExpiresAt.value,
-    ),
+    Boolean(examStartedAt.value && examExpiresAt.value),
 );
 
 /*
@@ -195,9 +164,7 @@ const examStarted = computed(() =>
 |--------------------------------------------------------------------------
 */
 
-const submissionId = ref<string | null>(
-    props.existing?.id ?? null,
-);
+const submissionId = ref<string | null>(props.existing?.id ?? null);
 
 /*
 |--------------------------------------------------------------------------
@@ -208,23 +175,35 @@ const submissionId = ref<string | null>(
 const currentQuestionIndex = ref(0);
 
 const currentQuestion = computed(
-    () =>
-        props.assignment.questions[
-            currentQuestionIndex.value
-        ],
+    () => props.assignment.questions[currentQuestionIndex.value],
 );
 
 const isLastQuestion = computed(
-    () =>
-        currentQuestionIndex.value ===
-        props.assignment.questions.length - 1,
+    () => currentQuestionIndex.value === props.assignment.questions.length - 1,
 );
+
+const questionSkippingRestricted = computed(
+    () =>
+        props.assignment.type === 'mcq' &&
+        Boolean(props.exam?.proctoring_enabled) &&
+        !props.exam?.allow_question_skipping,
+);
+
+const navigationError = ref<string | null>(null);
 
 const allAnswered = computed(() =>
     props.assignment.questions.every(
-        (question) =>
-            mcqAnswers.value[question.id] != null,
+        (question) => mcqAnswers.value[question.id] != null,
     ),
+);
+
+watch(
+    () => currentQuestion.value && mcqAnswers.value[currentQuestion.value.id],
+    (answer) => {
+        if (answer) {
+            navigationError.value = null;
+        }
+    },
 );
 
 /*
@@ -233,14 +212,11 @@ const allAnswered = computed(() =>
 |--------------------------------------------------------------------------
 */
 
-const isPastDue = computed(
-    () =>
-        Boolean(
-            props.assignment.due_date &&
-                new Date(
-                    props.assignment.due_date,
-                ) < new Date(),
-        ),
+const isPastDue = computed(() =>
+    Boolean(
+        props.assignment.due_date &&
+        new Date(props.assignment.due_date) < new Date(),
+    ),
 );
 
 /*
@@ -261,12 +237,7 @@ function updateRemainingTime() {
     remainingSeconds.value = Math.max(
         0,
         Math.floor(
-            (
-                new Date(
-                    examExpiresAt.value,
-                ).getTime() -
-                Date.now()
-            ) / 1000,
+            (new Date(examExpiresAt.value).getTime() - Date.now()) / 1000,
         ),
     );
 }
@@ -278,10 +249,7 @@ function startTimer() {
 
     updateRemainingTime();
 
-    timer = window.setInterval(
-        updateRemainingTime,
-        1000,
-    );
+    timer = window.setInterval(updateRemainingTime, 1000);
 }
 
 function stopTimer() {
@@ -294,12 +262,9 @@ function stopTimer() {
 }
 
 function formatRemainingTime() {
-    const minutes = Math.floor(
-        remainingSeconds.value / 60,
-    );
+    const minutes = Math.floor(remainingSeconds.value / 60);
 
-    const seconds =
-        remainingSeconds.value % 60;
+    const seconds = remainingSeconds.value % 60;
 
     return `${String(minutes).padStart(
         2,
@@ -336,12 +301,10 @@ async function submitEssayCode() {
         showApiToast(response);
 
         const encryptedSubmissionId =
-            response.data?.data?.submission_id ??
-            response.data?.submission_id;
+            response.data?.data?.submission_id ?? response.data?.submission_id;
 
         if (encryptedSubmissionId) {
-            window.location.href =
-                `/submissions/${encryptedSubmissionId}`;
+            window.location.href = `/submissions/${encryptedSubmissionId}`;
 
             return;
         }
@@ -355,10 +318,7 @@ async function submitEssayCode() {
 }
 
 async function submitMcq() {
-    if (
-        submitting.value ||
-        !allAnswered.value
-    ) {
+    if (submitting.value || !allAnswered.value) {
         return;
     }
 
@@ -382,12 +342,10 @@ async function submitMcq() {
         showApiToast(response);
 
         const encryptedSubmissionId =
-            response.data?.data?.submission_id ??
-            response.data?.submission_id;
+            response.data?.data?.submission_id ?? response.data?.submission_id;
 
         if (encryptedSubmissionId) {
-            window.location.href =
-                `/submissions/${encryptedSubmissionId}`;
+            window.location.href = `/submissions/${encryptedSubmissionId}`;
 
             return;
         }
@@ -407,10 +365,7 @@ async function submitMcq() {
 */
 
 async function startExam() {
-    if (
-        !termsAccepted.value ||
-        startingExam.value
-    ) {
+    if (!termsAccepted.value || startingExam.value) {
         return;
     }
 
@@ -433,9 +388,7 @@ async function startExam() {
 
         showApiToast(response);
 
-        if (
-            props.exam?.proctoring_enabled
-        ) {
+        if (props.exam?.proctoring_enabled) {
             await checkCameraPermission();
         }
 
@@ -454,40 +407,24 @@ async function startExam() {
 */
 
 async function checkCameraPermission() {
-    if (
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia
-    ) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         return;
     }
 
-    let stream:
-        | MediaStream
-        | undefined;
+    let stream: MediaStream | undefined;
 
     try {
-        stream =
-            await navigator.mediaDevices.getUserMedia(
-                {
-                    video: true,
-                    audio: false,
-                },
-            );
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+        });
 
-        stream
-            .getTracks()
-            .forEach((track) => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
     } catch {
-        if (
-            submissionId.value &&
-            examStarted.value
-        ) {
-            reportEvent(
-                'camera_permission_denied',
-                {
-                    source: 'getUserMedia',
-                },
-            );
+        if (submissionId.value && examStarted.value) {
+            reportEvent('camera_permission_denied', {
+                source: 'getUserMedia',
+            });
         }
     }
 }
@@ -499,20 +436,25 @@ async function checkCameraPermission() {
 */
 
 function previousQuestion() {
-    currentQuestionIndex.value =
-        Math.max(
-            0,
-            currentQuestionIndex.value - 1,
-        );
+    currentQuestionIndex.value = Math.max(0, currentQuestionIndex.value - 1);
 }
 
 function nextQuestion() {
-    currentQuestionIndex.value =
-        Math.min(
-            props.assignment.questions.length -
-                1,
-            currentQuestionIndex.value + 1,
-        );
+    if (
+        questionSkippingRestricted.value &&
+        currentQuestion.value &&
+        !mcqAnswers.value[currentQuestion.value.id]
+    ) {
+        navigationError.value = 'Answer this question before continuing.';
+
+        return;
+    }
+
+    navigationError.value = null;
+    currentQuestionIndex.value = Math.min(
+        props.assignment.questions.length - 1,
+        currentQuestionIndex.value + 1,
+    );
 }
 
 /*
@@ -521,13 +463,9 @@ function nextQuestion() {
 |--------------------------------------------------------------------------
 */
 
-let heartbeatTimer:
-    | number
-    | undefined;
+let heartbeatTimer: number | undefined;
 
-let flushTimer:
-    | number
-    | undefined;
+let flushTimer: number | undefined;
 
 let lastResizeReport = 0;
 
@@ -537,9 +475,7 @@ let flushingEvents = false;
 
 const eventDeliveryError = ref(false);
 
-const pendingEvents = ref<
-    PendingEvent[]
->([]);
+const pendingEvents = ref<PendingEvent[]>([]);
 
 /*
 |--------------------------------------------------------------------------
@@ -551,17 +487,13 @@ const monitoringActive = computed(
     () =>
         monitoringAttached &&
         examStarted.value &&
-        Boolean(
-            props.exam?.proctoring_enabled,
-        ),
+        Boolean(props.exam?.proctoring_enabled),
 );
 
 function getMonitoringMetadata() {
     return {
         visible: !document.hidden,
-        fullscreen: Boolean(
-            document.fullscreenElement,
-        ),
+        fullscreen: Boolean(document.fullscreenElement),
         timestamp: new Date().toISOString(),
     };
 }
@@ -574,10 +506,7 @@ function getMonitoringMetadata() {
 
 function reportEvent(
     eventType: MonitorEvent,
-    metadata: Record<
-        string,
-        number | string | boolean
-    > = {},
+    metadata: Record<string, number | string | boolean> = {},
 ) {
     if (
         !submissionId.value ||
@@ -616,56 +545,40 @@ async function flushEvents() {
     flushingEvents = true;
 
     try {
-        while (
-            submissionId.value &&
-            pendingEvents.value.length > 0
-        ) {
-            const events =
-                pendingEvents.value.splice(
-                    0,
-                    pendingEvents.value.length,
-                );
+        while (submissionId.value && pendingEvents.value.length > 0) {
+            const events = pendingEvents.value.splice(
+                0,
+                pendingEvents.value.length,
+            );
 
             try {
-                const response =
-                    await axios.post(
-                        `/submissions/${submissionId.value}/proctoring-events`,
-                        {
-                            events,
+                const response = await axios.post(
+                    `/submissions/${submissionId.value}/proctoring-events`,
+                    {
+                        events,
+                    },
+                    {
+                        headers: {
+                            Accept: 'application/json',
                         },
-                        {
-                            headers: {
-                                Accept:
-                                    'application/json',
-                            },
-                            timeout: 10000,
-                        },
-                    );
+                        timeout: 10000,
+                    },
+                );
 
-                if (
-                    response.data?.success ===
-                    false
-                ) {
+                if (response.data?.success === false) {
                     throw new Error(
                         response.data?.message ??
                             'Failed to send monitoring events.',
                     );
                 }
 
-                eventDeliveryError.value =
-                    false;
+                eventDeliveryError.value = false;
             } catch (error) {
-                pendingEvents.value.unshift(
-                    ...events,
-                );
+                pendingEvents.value.unshift(...events);
 
-                eventDeliveryError.value =
-                    true;
+                eventDeliveryError.value = true;
 
-                console.error(
-                    'PROCTORING EVENT ERROR:',
-                    error,
-                );
+                console.error('PROCTORING EVENT ERROR:', error);
 
                 break;
             }
@@ -686,17 +599,11 @@ function startFlushRetry() {
         return;
     }
 
-    flushTimer = window.setInterval(
-        () => {
-            if (
-                pendingEvents.value.length >
-                0
-            ) {
-                void flushEvents();
-            }
-        },
-        5000,
-    );
+    flushTimer = window.setInterval(() => {
+        if (pendingEvents.value.length > 0) {
+            void flushEvents();
+        }
+    }, 5000);
 }
 
 function stopFlushRetry() {
@@ -715,25 +622,17 @@ function stopFlushRetry() {
 */
 
 function handleFullscreenChange() {
-    if (
-        document.fullscreenElement
-    ) {
-        reportEvent(
-            'fullscreen_entered',
-            {
-                source: 'fullscreenchange',
-            },
-        );
+    if (document.fullscreenElement) {
+        reportEvent('fullscreen_entered', {
+            source: 'fullscreenchange',
+        });
 
         return;
     }
 
-    reportEvent(
-        'fullscreen_exited',
-        {
-            source: 'fullscreenchange',
-        },
-    );
+    reportEvent('fullscreen_exited', {
+        source: 'fullscreenchange',
+    });
 }
 
 function requestFullscreen() {
@@ -744,9 +643,7 @@ function requestFullscreen() {
         return;
     }
 
-    document.documentElement
-        .requestFullscreen()
-        .catch(() => {});
+    document.documentElement.requestFullscreen().catch(() => {});
 }
 
 /*
@@ -756,73 +653,52 @@ function requestFullscreen() {
 */
 
 function handleWindowBlur() {
-    reportEvent(
-        'tab_hidden',
-        {
-            source: 'window_blur',
-        },
-    );
+    reportEvent('tab_hidden', {
+        source: 'window_blur',
+    });
 }
 
 function handleWindowFocus() {
-    reportEvent(
-        'tab_visible',
-        {
-            source: 'window_focus',
-        },
-    );
+    reportEvent('tab_visible', {
+        source: 'window_focus',
+    });
 }
 
 function handlePageHide() {
-    reportEvent(
-        'tab_hidden',
-        {
-            source: 'pagehide',
-        },
-    );
+    reportEvent('tab_hidden', {
+        source: 'pagehide',
+    });
 
     void flushEvents();
 }
 
 function handleVisibilityChange() {
     if (document.hidden) {
-        reportEvent(
-            'tab_hidden',
-            {
-                source: 'visibilitychange',
-            },
-        );
+        reportEvent('tab_hidden', {
+            source: 'visibilitychange',
+        });
 
         return;
     }
 
-    reportEvent(
-        'tab_visible',
-        {
-            source: 'visibilitychange',
-        },
-    );
+    reportEvent('tab_visible', {
+        source: 'visibilitychange',
+    });
 }
 
 function handleResize() {
     const now = Date.now();
 
-    if (
-        now - lastResizeReport <
-        1000
-    ) {
+    if (now - lastResizeReport < 1000) {
         return;
     }
 
     lastResizeReport = now;
 
-    reportEvent(
-        'window_resized',
-        {
-            width: window.innerWidth,
-            height: window.innerHeight,
-        },
-    );
+    reportEvent('window_resized', {
+        width: window.innerWidth,
+        height: window.innerHeight,
+    });
 }
 
 /*
@@ -832,56 +708,35 @@ function handleResize() {
 */
 
 function handleCopy() {
-    reportEvent(
-        'copy_detected',
-        {
-            source: 'clipboard',
-        },
-    );
+    reportEvent('copy_detected', {
+        source: 'clipboard',
+    });
 }
 
 function handlePaste() {
-    reportEvent(
-        'paste_detected',
-        {
-            source: 'clipboard',
-        },
-    );
+    reportEvent('paste_detected', {
+        source: 'clipboard',
+    });
 }
 
 function handleCut() {
-    reportEvent(
-        'cut_detected',
-        {
-            source: 'clipboard',
-        },
-    );
+    reportEvent('cut_detected', {
+        source: 'clipboard',
+    });
 }
 
-function handleContextMenu(
-    event: MouseEvent,
-) {
-    reportEvent(
-        'context_menu_used',
-        {
-            x: event.clientX,
-            y: event.clientY,
-        },
-    );
+function handleContextMenu(event: MouseEvent) {
+    reportEvent('context_menu_used', {
+        x: event.clientX,
+        y: event.clientY,
+    });
 }
 
-function handleKeyDown(
-    event: KeyboardEvent,
-) {
-    if (
-        event.key === 'PrintScreen'
-    ) {
-        reportEvent(
-            'print_screen_suspected',
-            {
-                source: 'keyboard',
-            },
-        );
+function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === 'PrintScreen') {
+        reportEvent('print_screen_suspected', {
+            source: 'keyboard',
+        });
     }
 }
 
@@ -892,21 +747,14 @@ function handleKeyDown(
 */
 
 function sendHeartbeat() {
-    if (
-        !monitoringActive.value
-    ) {
+    if (!monitoringActive.value) {
         return;
     }
 
-    reportEvent(
-        'heartbeat',
-        {
-            visible: !document.hidden,
-            fullscreen: Boolean(
-                document.fullscreenElement,
-            ),
-        },
-    );
+    reportEvent('heartbeat', {
+        visible: !document.hidden,
+        fullscreen: Boolean(document.fullscreenElement),
+    });
 }
 
 function startHeartbeat() {
@@ -916,11 +764,7 @@ function startHeartbeat() {
 
     sendHeartbeat();
 
-    heartbeatTimer =
-        window.setInterval(
-            sendHeartbeat,
-            15000,
-        );
+    heartbeatTimer = window.setInterval(sendHeartbeat, 15000);
 }
 
 function stopHeartbeat() {
@@ -928,9 +772,7 @@ function stopHeartbeat() {
         return;
     }
 
-    window.clearInterval(
-        heartbeatTimer,
-    );
+    window.clearInterval(heartbeatTimer);
 
     heartbeatTimer = undefined;
 }
@@ -956,71 +798,33 @@ function attachMonitoring() {
     startFlushRetry();
     startHeartbeat();
 
-    document.addEventListener(
-        'visibilitychange',
-        handleVisibilityChange,
-    );
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    document.addEventListener(
-        'fullscreenchange',
-        handleFullscreenChange,
-    );
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
 
-    document.addEventListener(
-        'copy',
-        handleCopy,
-    );
+    document.addEventListener('copy', handleCopy);
 
-    document.addEventListener(
-        'paste',
-        handlePaste,
-    );
+    document.addEventListener('paste', handlePaste);
 
-    document.addEventListener(
-        'cut',
-        handleCut,
-    );
+    document.addEventListener('cut', handleCut);
 
-    document.addEventListener(
-        'contextmenu',
-        handleContextMenu,
-    );
+    document.addEventListener('contextmenu', handleContextMenu);
 
-    document.addEventListener(
-        'keydown',
-        handleKeyDown,
-    );
+    document.addEventListener('keydown', handleKeyDown);
 
-    window.addEventListener(
-        'resize',
-        handleResize,
-    );
+    window.addEventListener('resize', handleResize);
 
-    window.addEventListener(
-        'blur',
-        handleWindowBlur,
-    );
+    window.addEventListener('blur', handleWindowBlur);
 
-    window.addEventListener(
-        'focus',
-        handleWindowFocus,
-    );
+    window.addEventListener('focus', handleWindowFocus);
 
-    window.addEventListener(
-        'pagehide',
-        handlePageHide,
-    );
+    window.addEventListener('pagehide', handlePageHide);
 
-    reportEvent(
-        'heartbeat',
-        {
-            source: 'monitoring_attached',
-            visible: !document.hidden,
-            fullscreen: Boolean(
-                document.fullscreenElement,
-            ),
-        },
-    );
+    reportEvent('heartbeat', {
+        source: 'monitoring_attached',
+        visible: !document.hidden,
+        fullscreen: Boolean(document.fullscreenElement),
+    });
 }
 
 function detachMonitoring() {
@@ -1035,60 +839,27 @@ function detachMonitoring() {
 
     stopHeartbeat();
 
-    document.removeEventListener(
-        'visibilitychange',
-        handleVisibilityChange,
-    );
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-    document.removeEventListener(
-        'fullscreenchange',
-        handleFullscreenChange,
-    );
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
 
-    document.removeEventListener(
-        'copy',
-        handleCopy,
-    );
+    document.removeEventListener('copy', handleCopy);
 
-    document.removeEventListener(
-        'paste',
-        handlePaste,
-    );
+    document.removeEventListener('paste', handlePaste);
 
-    document.removeEventListener(
-        'cut',
-        handleCut,
-    );
+    document.removeEventListener('cut', handleCut);
 
-    document.removeEventListener(
-        'contextmenu',
-        handleContextMenu,
-    );
+    document.removeEventListener('contextmenu', handleContextMenu);
 
-    document.removeEventListener(
-        'keydown',
-        handleKeyDown,
-    );
+    document.removeEventListener('keydown', handleKeyDown);
 
-    window.removeEventListener(
-        'resize',
-        handleResize,
-    );
+    window.removeEventListener('resize', handleResize);
 
-    window.removeEventListener(
-        'blur',
-        handleWindowBlur,
-    );
+    window.removeEventListener('blur', handleWindowBlur);
 
-    window.removeEventListener(
-        'focus',
-        handleWindowFocus,
-    );
+    window.removeEventListener('focus', handleWindowFocus);
 
-    window.removeEventListener(
-        'pagehide',
-        handlePageHide,
-    );
+    window.removeEventListener('pagehide', handlePageHide);
 
     void flushEvents();
 
@@ -1122,19 +893,9 @@ watch(
 */
 
 watch(
-    [
-        examStarted,
-        () =>
-            props.exam
-                ?.proctoring_enabled,
-        submissionId,
-    ],
+    [examStarted, () => props.exam?.proctoring_enabled, submissionId],
     ([started]) => {
-        if (
-            started &&
-            props.exam?.proctoring_enabled &&
-            submissionId.value
-        ) {
+        if (started && props.exam?.proctoring_enabled && submissionId.value) {
             attachMonitoring();
         } else {
             detachMonitoring();
@@ -1158,25 +919,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head
-        :title="`Submit — ${assignment.title}`"
-    />
+    <Head :title="`Submit — ${assignment.title}`" />
 
-    <div
-        class="min-h-full w-full min-w-0 flex-1 bg-muted/20"
-    >
+    <div class="min-h-full w-full min-w-0 flex-1 bg-muted/20">
         <div
             class="mx-auto flex w-full max-w-6xl flex-col gap-5 p-3 sm:gap-6 sm:p-5 lg:p-8"
         >
             <!-- ==========================================================
                  HEADER
             =========================================================== -->
-            <div
-                class="rounded-2xl border bg-card px-4 py-4 shadow-sm sm:px-6"
-            >
-                <div
-                    class="flex min-w-0 items-start gap-3 sm:gap-4"
-                >
+            <div class="rounded-2xl border bg-card px-4 py-4 shadow-sm sm:px-6">
+                <div class="flex min-w-0 items-start gap-3 sm:gap-4">
                     <Button
                         variant="outline"
                         size="icon"
@@ -1186,42 +939,25 @@ onBeforeUnmount(() => {
                         <Link
                             :href="`/my-sections/${assignment.section.id}/assignments`"
                         >
-                            <ArrowLeft
-                                class="h-4 w-4"
-                            />
+                            <ArrowLeft class="h-4 w-4" />
 
-                            <span
-                                class="sr-only"
-                            >
-                                Back
-                            </span>
+                            <span class="sr-only"> Back </span>
                         </Link>
                     </Button>
 
-                    <div
-                        class="min-w-0 flex-1"
-                    >
-                        <div
-                            class="flex flex-wrap items-center gap-2"
-                        >
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
                             <h1
-                                class="break-words text-lg font-semibold tracking-tight sm:text-xl"
+                                class="text-lg font-semibold tracking-tight break-words sm:text-xl"
                             >
-                                {{
-                                    assignment.title
-                                }}
+                                {{ assignment.title }}
                             </h1>
 
-                            <Badge
-                                variant="secondary"
-                                class="shrink-0"
-                            >
+                            <Badge variant="secondary" class="shrink-0">
                                 {{
-                                    assignment.type ===
-                                    'mcq'
+                                    assignment.type === 'mcq'
                                         ? 'Quiz'
-                                        : assignment.type ===
-                                            'code'
+                                        : assignment.type === 'code'
                                           ? 'Programming'
                                           : 'Essay'
                                 }}
@@ -1231,18 +967,10 @@ onBeforeUnmount(() => {
                         <div
                             class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:text-sm"
                         >
-                            <span
-                                class="flex items-center gap-1.5"
-                            >
-                                <BookOpen
-                                    class="h-3.5 w-3.5 shrink-0"
-                                />
+                            <span class="flex items-center gap-1.5">
+                                <BookOpen class="h-3.5 w-3.5 shrink-0" />
 
-                                {{
-                                    assignment.section
-                                        .subject
-                                        .code
-                                }}
+                                {{ assignment.section.subject.code }}
                             </span>
 
                             <span
@@ -1251,13 +979,8 @@ onBeforeUnmount(() => {
                                 •
                             </span>
 
-                            <span
-                                class="break-words"
-                            >
-                                {{
-                                    assignment.section
-                                        .name
-                                }}
+                            <span class="break-words">
+                                {{ assignment.section.name }}
                             </span>
 
                             <span
@@ -1268,26 +991,18 @@ onBeforeUnmount(() => {
 
                             <span>
                                 Max
-                                {{
-                                    assignment.max_score
-                                }}
+                                {{ assignment.max_score }}
                                 pts
                             </span>
 
                             <span
-                                v-if="
-                                    assignment.due_date
-                                "
+                                v-if="assignment.due_date"
                                 class="flex items-center gap-1.5"
                                 :class="
-                                    isPastDue
-                                        ? 'font-medium text-red-600'
-                                        : ''
+                                    isPastDue ? 'font-medium text-red-600' : ''
                                 "
                             >
-                                <Clock
-                                    class="h-3.5 w-3.5 shrink-0"
-                                />
+                                <Clock class="h-3.5 w-3.5 shrink-0" />
 
                                 Due
                                 {{
@@ -1304,49 +1019,33 @@ onBeforeUnmount(() => {
             <!-- ==========================================================
                  INSTRUCTIONS
             =========================================================== -->
-            <section
-                class="rounded-2xl border bg-card shadow-sm"
-            >
-                <div
-                    class="flex items-start gap-3 border-b px-4 py-4 sm:px-6"
-                >
+            <section class="rounded-2xl border bg-card shadow-sm">
+                <div class="flex items-start gap-3 border-b px-4 py-4 sm:px-6">
                     <div
                         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"
                     >
-                        <FileText
-                            class="h-4 w-4 text-primary"
-                        />
+                        <FileText class="h-4 w-4 text-primary" />
                     </div>
 
-                    <div
-                        class="min-w-0"
-                    >
-                        <h2
-                            class="text-sm font-semibold"
-                        >
-                            Instructions
-                        </h2>
+                    <div class="min-w-0">
+                        <h2 class="text-sm font-semibold">Instructions</h2>
 
-                        <p
-                            class="mt-0.5 text-xs text-muted-foreground"
-                        >
-                            Read carefully before
-                            starting your submission.
+                        <p class="mt-0.5 text-xs text-muted-foreground">
+                            Read carefully before starting your submission.
                         </p>
                     </div>
                 </div>
 
-                <div
-                    class="px-4 py-5 sm:px-6 sm:py-6"
-                >
-                    <p
-                        class="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90"
-                    >
-                        {{
-                            assignment.instructions ||
-                            'No instructions provided.'
-                        }}
-                    </p>
+                <div class="px-4 py-5 sm:px-6 sm:py-6">
+                    <div
+                        class="rich-text-content text-sm leading-7 break-words text-foreground/90"
+                        v-html="
+                            sanitizeRichText(
+                                assignment.instructions ||
+                                    'No instructions provided.',
+                            )
+                        "
+                    />
                 </div>
             </section>
 
@@ -1359,14 +1058,12 @@ onBeforeUnmount(() => {
             >
                 <!-- Exam Header -->
                 <div
-                    class="border-b border-amber-200 bg-amber-50/70 px-4 py-4 dark:border-amber-900 dark:bg-amber-950/20 sm:px-6"
+                    class="border-b border-amber-200 bg-amber-50/70 px-4 py-4 sm:px-6 dark:border-amber-900 dark:bg-amber-950/20"
                 >
                     <div
                         class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
                     >
-                        <div
-                            class="flex min-w-0 items-start gap-3"
-                        >
+                        <div class="flex min-w-0 items-start gap-3">
                             <div
                                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/40"
                             >
@@ -1375,9 +1072,7 @@ onBeforeUnmount(() => {
                                 />
                             </div>
 
-                            <div
-                                class="min-w-0"
-                            >
+                            <div class="min-w-0">
                                 <h2
                                     class="font-semibold text-amber-950 dark:text-amber-100"
                                 >
@@ -1385,12 +1080,10 @@ onBeforeUnmount(() => {
                                 </h2>
 
                                 <p
-                                    class="mt-1 text-xs leading-relaxed text-amber-800 dark:text-amber-300 sm:text-sm"
+                                    class="mt-1 text-xs leading-relaxed text-amber-800 sm:text-sm dark:text-amber-300"
                                 >
-                                    Your exam attempt is
-                                    timed. Activity may be
-                                    recorded for faculty
-                                    review.
+                                    Your exam attempt is timed. Activity may be
+                                    recorded for faculty review.
                                 </p>
                             </div>
                         </div>
@@ -1405,7 +1098,7 @@ onBeforeUnmount(() => {
 
                             <div>
                                 <p
-                                    class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                                    class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
                                 >
                                     Time Remaining
                                 </p>
@@ -1413,15 +1106,12 @@ onBeforeUnmount(() => {
                                 <p
                                     class="font-mono text-xl font-bold tabular-nums"
                                     :class="
-                                        remainingSeconds <
-                                        60
+                                        remainingSeconds < 60
                                             ? 'text-red-600'
                                             : ''
                                     "
                                 >
-                                    {{
-                                        formatRemainingTime()
-                                    }}
+                                    {{ formatRemainingTime() }}
                                 </p>
                             </div>
                         </div>
@@ -1433,34 +1123,23 @@ onBeforeUnmount(() => {
                     v-if="!examStarted"
                     class="space-y-5 px-4 py-5 sm:px-6 sm:py-6"
                 >
-                    <div
-                        class="rounded-xl border bg-muted/30 p-4"
-                    >
-                        <div
-                            class="flex items-start gap-3"
-                        >
+                    <div class="rounded-xl border bg-muted/30 p-4">
+                        <div class="flex items-start gap-3">
                             <ShieldCheck
                                 class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
                             />
 
-                            <div
-                                class="min-w-0"
-                            >
-                                <p
-                                    class="text-sm font-medium"
-                                >
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium">
                                     Before you begin
                                 </p>
 
                                 <p
                                     class="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm"
                                 >
-                                    Accept the terms to
-                                    reveal the exam
-                                    questions. Make sure
-                                    you are ready to
-                                    complete the attempt
-                                    within the allotted
+                                    Accept the terms to reveal the exam
+                                    questions. Make sure you are ready to
+                                    complete the attempt within the allotted
                                     time.
                                 </p>
                             </div>
@@ -1471,33 +1150,23 @@ onBeforeUnmount(() => {
                         class="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/30"
                     >
                         <input
-                            v-model="
-                                termsAccepted
-                            "
+                            v-model="termsAccepted"
                             type="checkbox"
                             class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                         />
 
-                        <span
-                            class="text-sm leading-relaxed"
-                        >
-                            I understand that this
-                            attempt is timed and that
-                            tab changes, window
-                            activity, fullscreen
-                            changes, and clipboard
-                            activity may be recorded
-                            for faculty review.
+                        <span class="text-sm leading-relaxed">
+                            I understand that this attempt is timed and that tab
+                            changes, window activity, fullscreen changes, and
+                            clipboard activity may be recorded for faculty
+                            review.
                         </span>
                     </label>
 
                     <Button
                         type="button"
                         class="w-full sm:w-auto"
-                        :disabled="
-                            !termsAccepted ||
-                            startingExam
-                        "
+                        :disabled="!termsAccepted || startingExam"
                         @click="startExam"
                     >
                         {{
@@ -1509,10 +1178,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- Active Exam -->
-                <div
-                    v-else
-                    class="space-y-3 px-4 py-4 sm:px-6"
-                >
+                <div v-else class="space-y-3 px-4 py-4 sm:px-6">
                     <div
                         class="flex items-start gap-3 rounded-xl bg-muted/30 p-4"
                     >
@@ -1520,19 +1186,13 @@ onBeforeUnmount(() => {
                             class="mt-0.5 h-5 w-5 shrink-0 text-green-600"
                         />
 
-                        <div
-                            class="min-w-0"
-                        >
-                            <p
-                                class="text-sm font-medium"
-                            >
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium">
                                 Exam attempt active
                             </p>
 
                             <p
-                                v-if="
-                                    exam.proctoring_enabled
-                                "
+                                v-if="exam.proctoring_enabled"
                                 class="mt-1 text-xs leading-relaxed text-muted-foreground"
                             >
                                 {{
@@ -1543,17 +1203,12 @@ onBeforeUnmount(() => {
                             </p>
 
                             <p
-                                v-if="
-                                    eventDeliveryError
-                                "
-                                class="mt-2 text-xs font-medium leading-relaxed text-red-600"
+                                v-if="eventDeliveryError"
+                                class="mt-2 text-xs leading-relaxed font-medium text-red-600"
                             >
-                                Monitoring connection
-                                interrupted. Events
-                                will be retried
-                                automatically. Keep this
-                                page open and notify your
-                                instructor if the problem
+                                Monitoring connection interrupted. Events will
+                                be retried automatically. Keep this page open
+                                and notify your instructor if the problem
                                 continues.
                             </p>
                         </div>
@@ -1565,21 +1220,13 @@ onBeforeUnmount(() => {
                  PAST DUE
             =========================================================== -->
             <div
-                v-if="
-                    isPastDue &&
-                    !existing
-                "
+                v-if="isPastDue && !existing"
                 class="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-400"
             >
-                <Clock
-                    class="mt-0.5 h-4 w-4 shrink-0"
-                />
+                <Clock class="mt-0.5 h-4 w-4 shrink-0" />
 
-                <p
-                    class="leading-relaxed"
-                >
-                    This assignment is past its
-                    due date and can no longer be
+                <p class="leading-relaxed">
+                    This assignment is past its due date and can no longer be
                     submitted.
                 </p>
             </div>
@@ -1588,18 +1235,13 @@ onBeforeUnmount(() => {
                  ALREADY APPROVED
             =========================================================== -->
             <div
-                v-else-if="
-                    existing?.status ===
-                    'approved'
-                "
+                v-else-if="existing?.status === 'approved'"
                 class="rounded-2xl border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/20"
             >
                 <div
                     class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                    <div
-                        class="flex items-start gap-3"
-                    >
+                    <div class="flex items-start gap-3">
                         <CheckCircle2
                             class="mt-0.5 h-5 w-5 shrink-0 text-green-600"
                         />
@@ -1607,8 +1249,7 @@ onBeforeUnmount(() => {
                         <p
                             class="text-sm leading-relaxed text-green-700 dark:text-green-400"
                         >
-                            Your submission has been
-                            graded and approved. You
+                            Your submission has been graded and approved. You
                             can no longer edit it.
                         </p>
                     </div>
@@ -1619,9 +1260,7 @@ onBeforeUnmount(() => {
                         class="w-full shrink-0 sm:w-auto"
                         as-child
                     >
-                        <Link
-                            :href="`/submissions/${existing.id}`"
-                        >
+                        <Link :href="`/submissions/${existing.id}`">
                             View Result
                         </Link>
                     </Button>
@@ -1633,79 +1272,52 @@ onBeforeUnmount(() => {
             =========================================================== -->
             <form
                 v-else-if="
-                    assignment.type ===
-                        'essay' &&
-                    (!exam ||
-                        examStarted)
+                    assignment.type === 'essay' && (!exam || examStarted)
                 "
                 class="overflow-hidden rounded-2xl border bg-card shadow-sm"
-                @submit.prevent="
-                    submitEssayCode
-                "
+                @submit.prevent="submitEssayCode"
             >
-                <div
-                    class="border-b px-4 py-4 sm:px-6"
-                >
-                    <div
-                        class="flex items-start gap-3"
-                    >
+                <div class="border-b px-4 py-4 sm:px-6">
+                    <div class="flex items-start gap-3">
                         <div
                             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"
                         >
-                            <FileText
-                                class="h-4 w-4 text-primary"
-                            />
+                            <FileText class="h-4 w-4 text-primary" />
                         </div>
 
                         <div>
-                            <h2
-                                class="text-sm font-semibold"
-                            >
-                                Your Essay
-                            </h2>
+                            <h2 class="text-sm font-semibold">Your Essay</h2>
 
-                            <p
-                                class="mt-0.5 text-xs text-muted-foreground"
-                            >
-                                Write your response
-                                below.
+                            <p class="mt-0.5 text-xs text-muted-foreground">
+                                Write your response below.
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div
-                    class="p-4 sm:p-6"
-                >
+                <div class="p-4 sm:p-6">
                     <textarea
-                        v-model="
-                            essayContent
-                        "
+                        v-model="essayContent"
                         rows="16"
                         required
                         minlength="10"
                         placeholder="Write your essay here…"
-                        class="min-h-[300px] w-full resize-y rounded-xl border bg-background px-4 py-3 text-sm leading-7 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 sm:min-h-[400px]"
+                        class="min-h-[300px] w-full resize-y rounded-xl border bg-background px-4 py-3 text-sm leading-7 shadow-sm transition outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 sm:min-h-[400px]"
                     ></textarea>
                 </div>
 
                 <div
                     class="flex flex-col gap-3 border-t bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
                 >
-                    <p
-                        class="text-xs leading-relaxed text-muted-foreground"
-                    >
-                        Your essay will be graded by
-                        AI and reviewed by your
+                    <p class="text-xs leading-relaxed text-muted-foreground">
+                        Your essay will be graded by AI and reviewed by your
                         faculty.
                     </p>
 
                     <Button
                         type="submit"
                         class="w-full sm:w-auto"
-                        :disabled="
-                            submitting
-                        "
+                        :disabled="submitting"
                     >
                         {{
                             submitting
@@ -1722,46 +1334,26 @@ onBeforeUnmount(() => {
                  CODE
             =========================================================== -->
             <form
-                v-else-if="
-                    assignment.type ===
-                        'code' &&
-                    (!exam ||
-                        examStarted)
-                "
+                v-else-if="assignment.type === 'code' && (!exam || examStarted)"
                 class="overflow-hidden rounded-2xl border bg-card shadow-sm"
-                @submit.prevent="
-                    submitEssayCode
-                "
+                @submit.prevent="submitEssayCode"
             >
-                <div
-                    class="border-b px-4 py-4 sm:px-6"
-                >
+                <div class="border-b px-4 py-4 sm:px-6">
                     <div
                         class="flex flex-wrap items-center justify-between gap-3"
                     >
-                        <div
-                            class="flex items-start gap-3"
-                        >
+                        <div class="flex items-start gap-3">
                             <div
                                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"
                             >
-                                <Code2
-                                    class="h-4 w-4 text-primary"
-                                />
+                                <Code2 class="h-4 w-4 text-primary" />
                             </div>
 
                             <div>
-                                <h2
-                                    class="text-sm font-semibold"
-                                >
-                                    Your Code
-                                </h2>
+                                <h2 class="text-sm font-semibold">Your Code</h2>
 
-                                <p
-                                    class="mt-0.5 text-xs text-muted-foreground"
-                                >
-                                    Enter your solution
-                                    using the required
+                                <p class="mt-0.5 text-xs text-muted-foreground">
+                                    Enter your solution using the required
                                     language.
                                 </p>
                             </div>
@@ -1771,21 +1363,14 @@ onBeforeUnmount(() => {
                             variant="outline"
                             class="shrink-0 font-mono text-xs"
                         >
-                            {{
-                                assignment.language ??
-                                'any'
-                            }}
+                            {{ assignment.language ?? 'any' }}
                         </Badge>
                     </div>
                 </div>
 
-                <div
-                    class="bg-zinc-950 p-2 sm:p-3"
-                >
+                <div class="bg-zinc-950 p-2 sm:p-3">
                     <textarea
-                        v-model="
-                            essayContent
-                        "
+                        v-model="essayContent"
                         rows="20"
                         required
                         placeholder="# Write your code here…"
@@ -1797,19 +1382,15 @@ onBeforeUnmount(() => {
                 <div
                     class="flex flex-col gap-3 border-t bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
                 >
-                    <p
-                        class="text-xs leading-relaxed text-muted-foreground"
-                    >
-                        Your code will be evaluated by
-                        AI and reviewed by your faculty.
+                    <p class="text-xs leading-relaxed text-muted-foreground">
+                        Your code will be evaluated by AI and reviewed by your
+                        faculty.
                     </p>
 
                     <Button
                         type="submit"
                         class="w-full sm:w-auto"
-                        :disabled="
-                            submitting
-                        "
+                        :disabled="submitting"
                     >
                         {{
                             submitting
@@ -1826,75 +1407,43 @@ onBeforeUnmount(() => {
                  MCQ
             =========================================================== -->
             <div
-                v-else-if="
-                    assignment.type ===
-                        'mcq' &&
-                    (!exam ||
-                        examStarted)
-                "
+                v-else-if="assignment.type === 'mcq' && (!exam || examStarted)"
                 class="min-w-0 space-y-4"
             >
                 <!-- Question Progress -->
-                <div
-                    class="rounded-2xl border bg-card p-4 shadow-sm sm:p-5"
-                >
+                <div class="rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
                     <div
                         class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                     >
-                        <div
-                            class="min-w-0"
-                        >
-                            <div
-                                class="flex items-center gap-2"
-                            >
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
                                 <div
                                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10"
                                 >
-                                    <Flag
-                                        class="h-4 w-4 text-primary"
-                                    />
+                                    <Flag class="h-4 w-4 text-primary" />
                                 </div>
 
                                 <div>
                                     <p
-                                        class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                                        class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
                                     >
                                         Quiz Progress
                                     </p>
 
-                                    <p
-                                        class="text-sm font-medium"
-                                    >
+                                    <p class="text-sm font-medium">
                                         Question
-                                        {{
-                                            currentQuestionIndex +
-                                            1
-                                        }}
+                                        {{ currentQuestionIndex + 1 }}
                                         of
-                                        {{
-                                            assignment
-                                                .questions
-                                                .length
-                                        }}
+                                        {{ assignment.questions.length }}
                                     </p>
                                 </div>
                             </div>
                         </div>
 
-                        <Badge
-                            variant="secondary"
-                            class="w-fit shrink-0"
-                        >
-                            {{
-                                Object.keys(
-                                    mcqAnswers,
-                                ).length
-                            }}
+                        <Badge variant="secondary" class="w-fit shrink-0">
+                            {{ Object.keys(mcqAnswers).length }}
                             /
-                            {{
-                                assignment.questions
-                                    .length
-                            }}
+                            {{ assignment.questions.length }}
                             answered
                         </Badge>
                     </div>
@@ -1906,14 +1455,9 @@ onBeforeUnmount(() => {
                             class="h-full rounded-full bg-primary transition-all duration-300"
                             :style="{
                                 width: `${
-                                    assignment
-                                        .questions
-                                        .length
-                                        ? ((currentQuestionIndex +
-                                              1) /
-                                              assignment
-                                                  .questions
-                                                  .length) *
+                                    assignment.questions.length
+                                        ? ((currentQuestionIndex + 1) /
+                                              assignment.questions.length) *
                                           100
                                         : 0
                                 }%`,
@@ -1923,100 +1467,66 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- Question -->
+                <p
+                    v-if="navigationError"
+                    class="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                    role="alert"
+                    aria-live="assertive"
+                >
+                    {{ navigationError }}
+                </p>
+
                 <div
                     v-if="currentQuestion"
                     class="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm"
                 >
-                    <div
-                        class="border-b px-4 py-4 sm:px-6"
-                    >
-                        <div
-                            class="flex items-center justify-between gap-4"
-                        >
-                            <div
-                                class="flex min-w-0 items-center gap-2"
-                            >
+                    <div class="border-b px-4 py-4 sm:px-6">
+                        <div class="flex items-center justify-between gap-4">
+                            <div class="flex min-w-0 items-center gap-2">
                                 <span
                                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
                                 >
-                                    {{
-                                        currentQuestionIndex +
-                                        1
-                                    }}
+                                    {{ currentQuestionIndex + 1 }}
                                 </span>
 
-                                <span
-                                    class="text-sm font-semibold"
-                                >
+                                <span class="text-sm font-semibold">
                                     Question
-                                    {{
-                                        currentQuestionIndex +
-                                        1
-                                    }}
+                                    {{ currentQuestionIndex + 1 }}
                                 </span>
                             </div>
 
-                            <Badge
-                                variant="outline"
-                                class="shrink-0"
-                            >
-                                {{
-                                    currentQuestion.points
-                                }}
+                            <Badge variant="outline" class="shrink-0">
+                                {{ currentQuestion.points }}
                                 point{{
-                                    currentQuestion.points !==
-                                    1
-                                        ? 's'
-                                        : ''
+                                    currentQuestion.points !== 1 ? 's' : ''
                                 }}
                             </Badge>
                         </div>
                     </div>
 
-                    <div
-                        class="space-y-6 p-4 sm:p-6"
-                    >
+                    <div class="space-y-6 p-4 sm:p-6">
                         <p
-                            class="break-words text-base font-medium leading-7 sm:text-lg"
+                            class="text-base leading-7 font-medium break-words sm:text-lg"
                         >
-                            {{
-                                currentQuestion.question
-                            }}
+                            {{ currentQuestion.question }}
                         </p>
 
-                        <div
-                            class="space-y-2.5"
-                        >
+                        <div class="space-y-2.5">
                             <label
-                                v-for="
-                                    choice in currentQuestion.choices
-                                "
-                                :key="
-                                    choice.id
-                                "
+                                v-for="choice in currentQuestion.choices"
+                                :key="choice.id"
                                 class="group flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all sm:p-4"
                                 :class="
-                                    mcqAnswers[
-                                        currentQuestion
-                                            .id
-                                    ] ===
-                                    choice.id
+                                    mcqAnswers[currentQuestion.id] === choice.id
                                         ? 'border-primary bg-primary/5 shadow-sm'
                                         : 'hover:border-primary/40 hover:bg-muted/30'
                                 "
                             >
                                 <input
-                                    v-model="
-                                        mcqAnswers[
-                                            currentQuestion
-                                                .id
-                                        ]
-                                    "
+                                    v-model="mcqAnswers[currentQuestion.id]"
                                     type="radio"
                                     :name="`q_${currentQuestion.id}`"
-                                    :value="
-                                        choice.id
-                                    "
+                                    :value="choice.id"
                                     class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                                 />
 
@@ -2029,30 +1539,23 @@ onBeforeUnmount(() => {
                                         {{
                                             String.fromCharCode(
                                                 65 +
-                                                    currentQuestion
-                                                        .choices
-                                                        .indexOf(
-                                                            choice,
-                                                        ),
+                                                    currentQuestion.choices.indexOf(
+                                                        choice,
+                                                    ),
                                             )
                                         }}
                                     </span>
 
                                     <span
-                                        class="min-w-0 break-words pt-0.5 text-sm leading-relaxed"
+                                        class="min-w-0 pt-0.5 text-sm leading-relaxed break-words"
                                     >
-                                        {{
-                                            choice.choice_text
-                                        }}
+                                        {{ choice.choice_text }}
                                     </span>
                                 </span>
 
                                 <CheckCircle2
                                     v-if="
-                                        mcqAnswers[
-                                            currentQuestion
-                                                .id
-                                        ] ===
+                                        mcqAnswers[currentQuestion.id] ===
                                         choice.id
                                     "
                                     class="mt-0.5 h-4 w-4 shrink-0 text-primary"
@@ -2069,26 +1572,17 @@ onBeforeUnmount(() => {
                             type="button"
                             variant="outline"
                             class="w-full sm:w-auto"
-                            :disabled="
-                                currentQuestionIndex ===
-                                0
-                            "
-                            @click="
-                                previousQuestion
-                            "
+                            :disabled="currentQuestionIndex === 0"
+                            @click="previousQuestion"
                         >
                             Previous
                         </Button>
 
                         <Button
-                            v-if="
-                                !isLastQuestion
-                            "
+                            v-if="!isLastQuestion"
                             type="button"
                             class="w-full sm:w-auto"
-                            @click="
-                                nextQuestion
-                            "
+                            @click="nextQuestion"
                         >
                             Next
                         </Button>
@@ -2097,13 +1591,8 @@ onBeforeUnmount(() => {
                             v-else
                             type="button"
                             class="w-full sm:w-auto"
-                            :disabled="
-                                !allAnswered ||
-                                submitting
-                            "
-                            @click="
-                                submitMcq
-                            "
+                            :disabled="!allAnswered || submitting"
+                            @click="submitMcq"
                         >
                             {{
                                 submitting
@@ -2121,15 +1610,10 @@ onBeforeUnmount(() => {
                     v-if="!allAnswered"
                     class="flex items-start gap-2.5 rounded-xl border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
                 >
-                    <Flag
-                        class="mt-0.5 h-4 w-4 shrink-0"
-                    />
+                    <Flag class="mt-0.5 h-4 w-4 shrink-0" />
 
-                    <p
-                        class="leading-relaxed"
-                    >
-                        Answer every question before
-                        submitting.
+                    <p class="leading-relaxed">
+                        Answer every question before submitting.
                     </p>
                 </div>
             </div>

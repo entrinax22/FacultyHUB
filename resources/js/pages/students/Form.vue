@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { GraduationCap } from 'lucide-vue-next';
 import { ref } from 'vue';
 
 import InputError from '@/components/InputError.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +36,13 @@ type Student = {
 const props = defineProps<{
     student?: Student;
 }>();
+
+const sectionContextId = new URLSearchParams(
+    usePage().url.split('?')[1] ?? '',
+).get('section_id');
+const studentBackHref = props.student && sectionContextId
+    ? `/students/${props.student.id}?section_id=${encodeURIComponent(sectionContextId)}`
+    : '/students';
 
 defineOptions({
     layout: {
@@ -92,7 +100,7 @@ async function submit() {
 
         showApiToast(response);
 
-        window.location.href = '/students';
+        window.location.href = studentBackHref;
     } catch (error: any) {
         console.error('Failed to save student:', error);
 
@@ -119,7 +127,13 @@ async function submit() {
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
 
         <!-- Header -->
-        <div class="flex items-center gap-3">
+        <SectionBackLink
+            class="-mb-3"
+            :href="studentBackHref"
+            :label="sectionContextId ? 'Back to Student' : 'Back to Students'"
+        />
+        <div class="flex flex-wrap items-center gap-3">
+
             <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10"
             >
@@ -327,7 +341,7 @@ async function submit() {
                     as-child
                     :disabled="processing"
                 >
-                    <Link href="/students">
+                    <Link :href="studentBackHref">
                         Cancel
                     </Link>
                 </Button>

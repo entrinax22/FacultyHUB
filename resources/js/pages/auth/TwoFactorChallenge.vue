@@ -9,6 +9,7 @@ import {
     InputOTPGroup,
     InputOTPSlot,
 } from '@/components/ui/input-otp';
+import { Spinner } from '@/components/ui/spinner';
 import { store } from '@/routes/two-factor/login';
 import type { TwoFactorConfigContent } from '@/types';
 
@@ -45,7 +46,6 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
     clearErrors();
     code.value = '';
 };
-
 </script>
 
 <template>
@@ -83,9 +83,15 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                     </div>
                     <InputError :message="errors.code" />
                 </div>
-                <Button type="submit" class="w-full" :disabled="processing"
-                    >Continue</Button
+                <Button
+                    type="submit"
+                    class="w-full"
+                    :disabled="processing"
+                    :aria-busy="processing"
                 >
+                    <Spinner v-if="processing" />
+                    {{ processing ? 'Verifying...' : 'Continue' }}
+                </Button>
                 <div class="text-center text-sm text-muted-foreground">
                     <span>or you can </span>
                     <button
@@ -114,9 +120,15 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                     required
                 />
                 <InputError :message="errors.recovery_code" />
-                <Button type="submit" class="w-full" :disabled="processing"
-                    >Continue</Button
+                <Button
+                    type="submit"
+                    class="w-full"
+                    :disabled="processing"
+                    :aria-busy="processing"
                 >
+                    <Spinner v-if="processing" />
+                    {{ processing ? 'Checking...' : 'Continue' }}
+                </Button>
 
                 <div class="text-center text-sm text-muted-foreground">
                     <span>or you can </span>

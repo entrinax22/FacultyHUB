@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 
 import {
     Pencil,
     BookOpen,
     GraduationCap,
 } from 'lucide-vue-next';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -55,6 +56,13 @@ const props = defineProps<{
     student: Student;
 }>();
 
+const sectionContextId = new URLSearchParams(
+    usePage().url.split('?')[1] ?? '',
+).get('section_id');
+const backHref = sectionContextId
+    ? `/sections/show/${encodeURIComponent(sectionContextId)}`
+    : '/students';
+
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -79,27 +87,34 @@ defineOptions({
     <div class="flex h-full flex-1 flex-col gap-6 p-4">
 
         <!-- Header -->
-        <div class="flex items-start justify-between">
-            <div class="flex items-center gap-4">
+        <SectionBackLink
+            class="-mb-3"
+            :href="backHref"
+            :label="sectionContextId ? 'Back to Section' : 'Back to Students'"
+        />
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
 
-                <!-- Initials -->
-                <div
-                    class="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-xl font-bold"
-                >
-                    {{ props.student.first_name?.[0] }}
-                    {{ props.student.last_name?.[0] }}
-                </div>
+                <div class="flex items-center gap-4">
+                    <!-- Initials -->
+                    <div
+                        class="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-xl font-bold"
+                    >
+                        {{ props.student.first_name?.[0] }}
+                        {{ props.student.last_name?.[0] }}
+                    </div>
 
-                <!-- Student Name -->
-                <div>
-                    <h1 class="text-2xl font-semibold">
-                        {{ props.student.first_name }}
-                        {{ props.student.last_name }}
-                    </h1>
+                    <!-- Student Name -->
+                    <div>
+                        <h1 class="text-2xl font-semibold">
+                            {{ props.student.first_name }}
+                            {{ props.student.last_name }}
+                        </h1>
 
-                    <p class="font-mono text-sm text-muted-foreground">
-                        {{ props.student.student_no }}
-                    </p>
+                        <p class="font-mono text-sm text-muted-foreground">
+                            {{ props.student.student_no }}
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -110,7 +125,9 @@ defineOptions({
                 as-child
             >
                 <Link
-                    :href="`/students/edit/${props.student.id}`"
+                    :href="sectionContextId
+                        ? `/students/edit/${props.student.id}?section_id=${encodeURIComponent(sectionContextId)}`
+                        : `/students/edit/${props.student.id}`"
                 >
                     <Pencil class="mr-1.5 h-3.5 w-3.5" />
                     Edit
@@ -251,7 +268,7 @@ defineOptions({
                         class="w-full"
                     >
                         <Link
-                            :href="`/sections/${enrollment.section.id}`"
+                            :href="`/sections/show/${enrollment.section.id}`"
                         >
                             <BookOpen
                                 class="mr-1.5 h-3.5 w-3.5"

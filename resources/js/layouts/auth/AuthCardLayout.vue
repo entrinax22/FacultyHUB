@@ -9,21 +9,19 @@ defineProps<{
 
 <template>
     <div
-        class="min-h-svh bg-muted px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12 xl:px-12 2xl:px-16"
+        class="min-h-svh bg-muted/70 px-4 py-6 transition-colors motion-reduce:transition-none sm:px-6 sm:py-8 lg:px-10 lg:py-12 xl:px-12 2xl:px-16"
     >
         <div
             class="mx-auto flex w-full max-w-5xl flex-col gap-6 xl:max-w-6xl 2xl:max-w-7xl"
         >
             <!-- Brand -->
             <div class="flex items-center justify-center py-1">
-            <BrandLogo
-                class-name="h-auto w-44 sm:w-52 lg:w-60"
-            />
+                <BrandLogo class-name="h-auto w-44 sm:w-52 lg:w-60" />
             </div>
 
             <!-- Single Auth Card -->
             <div
-                class="w-full overflow-hidden rounded-2xl border bg-background shadow-sm lg:rounded-3xl"
+                class="w-full overflow-hidden rounded-2xl border border-border/70 bg-background shadow-lg shadow-black/5 lg:rounded-3xl dark:shadow-black/20"
             >
                 <div
                     v-if="title || description"

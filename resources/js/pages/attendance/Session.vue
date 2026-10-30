@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 
 import {
-    ArrowLeft,
     Save,
     Lock,
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -424,28 +424,17 @@ onMounted(() => {
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
 
         <!-- Header -->
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/${section.id}/attendance`"
+            label="Back to Attendance"
+        />
         <div
-            class="flex items-start justify-between"
+            class="flex flex-wrap items-start justify-between gap-3"
         >
             <div class="flex items-start gap-3">
 
-                <!-- Back -->
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    as-child
-                    class="-ml-2 mt-0.5"
-                >
-                    <Link
-                        :href="
-                            `/sections/${section.id}/attendance`
-                        "
-                    >
-                        <ArrowLeft
-                            class="h-4 w-4"
-                        />
-                    </Link>
-                </Button>
+
 
                 <!-- Session information -->
                 <div>

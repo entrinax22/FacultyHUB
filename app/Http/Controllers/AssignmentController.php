@@ -9,11 +9,13 @@ use App\Models\GradingItem;
 use App\Models\Section;
 use App\Models\Module;
 use App\Services\AIGraderService;
+use App\Services\RichTextSanitizer;
 use App\Services\StudentNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Smalot\PdfParser\Parser;
@@ -581,7 +583,8 @@ class AssignmentController extends Controller
 
         $validated = $this->validateAssignment(
             $request,
-            $assignment->section
+            $assignment->section,
+            $assignment
         );
 
         DB::transaction(
@@ -796,13 +799,23 @@ class AssignmentController extends Controller
 
     private function validateAssignment(
         Request $request,
-        Section $section
+        Section $section,
+        ?Assignment $assignment = null
     ): array {
+        $hasQuestionSkippingInput = $request->exists('allow_question_skipping');
+        $requestedQuestionSkipping = $hasQuestionSkippingInput
+            ? $request->input('allow_question_skipping')
+            : null;
+
         $request->merge([
             'proctoring_enabled' =>
                 $request->boolean(
                     'proctoring_enabled'
                 ),
+            'allow_question_skipping' =>
+                $requestedQuestionSkipping
+                ?? $assignment?->allow_question_skipping
+                ?? false,
         ]);
 
         $validated = $request->validate([
@@ -854,6 +867,9 @@ class AssignmentController extends Controller
             'proctoring_enabled' =>
                 ['required', 'boolean'],
 
+            'allow_question_skipping' =>
+                ['required', 'boolean'],
+
             'questions' =>
                 'nullable|array',
 
@@ -878,6 +894,45 @@ class AssignmentController extends Controller
             'questions.*.choices.*.is_correct' =>
                 'boolean',
         ]);
+
+        $isProctoredMcq = ($validated['type'] ?? null) === 'mcq'
+            && (bool) $validated['proctoring_enabled'];
+
+        $validated['allow_question_skipping'] = $assignment
+            ? ($isProctoredMcq && $hasQuestionSkippingInput
+                ? (bool) $validated['allow_question_skipping']
+                : (bool) $assignment->allow_question_skipping)
+            : ($isProctoredMcq && (bool) $validated['allow_question_skipping']);
+
+        $richText = app(RichTextSanitizer::class);
+        $validated['instructions'] = $richText->sanitize($validated['instructions']);
+
+        if ($richText->toPlainText($validated['instructions']) === '') {
+            throw ValidationException::withMessages([
+                'instructions' => 'Instructions must contain readable text.',
+            ]);
+        }
+
+        if (array_key_exists('rubric', $validated)) {
+            $validated['rubric'] = $richText->sanitize($validated['rubric']);
+
+            if ($richText->toPlainText($validated['rubric']) === '') {
+                $validated['rubric'] = null;
+            }
+        }
+
+        $contentErrors = [];
+
+        // strlen measures the bytes of the sanitized UTF-8 value, including markup.
+        foreach (['instructions' => 48000, 'rubric' => 16000] as $field => $limit) {
+            if (array_key_exists($field, $validated) && strlen((string) $validated[$field]) > $limit) {
+                $contentErrors[$field] = ucfirst($field).' must not exceed '.number_format($limit).' UTF-8 bytes after sanitization.';
+            }
+        }
+
+        if ($contentErrors !== []) {
+            throw ValidationException::withMessages($contentErrors);
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -1509,6 +1564,9 @@ class AssignmentController extends Controller
 
             'proctoring_enabled' =>
                 (bool) $assignment->proctoring_enabled,
+
+            'allow_question_skipping' =>
+                (bool) $assignment->allow_question_skipping,
 
             'submissions_count' =>
                 $assignment->submissions_count ?? 0,

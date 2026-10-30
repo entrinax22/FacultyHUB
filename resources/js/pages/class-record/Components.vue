@@ -14,6 +14,7 @@ import { computed, onMounted, ref } from 'vue';
 
 
 import InputError from '@/components/InputError.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -544,11 +545,16 @@ function applyPreset(
         class="flex h-full flex-1 flex-col gap-6 p-4 max-w-2xl"
     >
         <!-- Header -->
-        <div class="flex items-start justify-between">
-            <div>
-                <h1 class="text-2xl font-semibold">
-                    Grading Components
-                </h1>
+        <SectionBackLink
+            class="-mb-3"
+            :href="`/sections/${props.sectionId}/class-record`"
+            label="Back to Class Record"
+        />
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
+
+                <div>
+                    <h1 class="text-2xl font-semibold">Grading Components</h1>
 
                 <p
                     v-if="section"
@@ -565,6 +571,7 @@ function applyPreset(
                 >
                     Loading section...
                 </p>
+                </div>
             </div>
 
             <div class="flex gap-2">
@@ -582,19 +589,6 @@ function applyPreset(
                     </Link>
                 </Button>
 
-                <Button
-                    variant="outline"
-                    size="sm"
-                    as-child
-                >
-                    <Link
-                        :href="
-                            `/sections/${props.sectionId}/class-record`
-                        "
-                    >
-                        View Class Record
-                    </Link>
-                </Button>
             </div>
         </div>
 

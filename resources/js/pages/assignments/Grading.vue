@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 
-import { ArrowLeft, Bot, CheckCircle2, Loader2, User } from 'lucide-vue-next';
+import { Bot, CheckCircle2, Loader2, User } from 'lucide-vue-next';
 
 import { onMounted, ref } from 'vue';
 import AiGradingPanel from '@/components/AiGradingPanel.vue';
 import InputError from '@/components/InputError.vue';
+import SectionBackLink from '@/components/SectionBackLink.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -335,18 +336,21 @@ onMounted(() => {
         <!-- Header -->
         <!-- ============================================================ -->
 
+        <SectionBackLink
+            class="-mb-3"
+            v-if="submission.assignment"
+            :href="`/assignments/${submission.assignment.id}`"
+            label="Back to Assignment"
+        />
+        <SectionBackLink
+            class="-mb-3"
+            v-else
+            href="/sections"
+            label="Back to Sections"
+        />
         <div class="flex items-start gap-3">
-            <Button variant="ghost" size="sm" as-child class="mt-0.5 -ml-2">
-                <Link
-                    :href="
-                        submission.assignment
-                            ? `/assignments/${submission.assignment.id}`
-                            : '#'
-                    "
-                >
-                    <ArrowLeft class="h-4 w-4" />
-                </Link>
-            </Button>
+
+
 
             <div>
                 <h1 class="text-xl font-semibold">

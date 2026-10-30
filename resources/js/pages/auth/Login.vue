@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Form, Head, Link } from '@inertiajs/vue3';
 
+import AuthStatusMessage from '@/components/AuthStatusMessage.vue';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import TextLink from '@/components/TextLink.vue';
@@ -46,7 +47,7 @@ defineProps<{
                     >
                         <!-- Decorative shapes -->
                         <div
-                            class="absolute -right-32 -top-32 size-96 rounded-full bg-[#15281c]/10 blur-3xl dark:bg-white/5"
+                            class="absolute -top-32 -right-32 size-96 rounded-full bg-[#15281c]/10 blur-3xl dark:bg-white/5"
                         />
 
                         <div
@@ -54,11 +55,11 @@ defineProps<{
                         />
 
                         <div
-                            class="absolute right-12 top-1/2 size-44 -translate-y-1/2 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
+                            class="absolute top-1/2 right-12 size-44 -translate-y-1/2 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
                         />
 
                         <div
-                            class="absolute bottom-28 right-28 size-20 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
+                            class="absolute right-28 bottom-28 size-20 rounded-full border border-[#15281c]/20 dark:border-[#cee2b1]/15"
                         />
 
                         <!-- Branding content -->
@@ -169,7 +170,7 @@ defineProps<{
                                     </div>
 
                                     <p
-                                        class="text-[11px] font-medium uppercase tracking-[0.18em] text-white/50"
+                                        class="text-[11px] font-medium tracking-[0.18em] text-white/50 uppercase"
                                     >
                                         Faculty-LMS
                                     </p>
@@ -179,13 +180,13 @@ defineProps<{
                             <!-- Main message -->
                             <div class="max-w-md">
                                 <p
-                                    class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#15281c]/70 dark:text-[#cee2b1]/70"
+                                    class="mb-4 text-xs font-semibold tracking-[0.2em] text-[#15281c]/70 uppercase dark:text-[#cee2b1]/70"
                                 >
                                     Welcome back
                                 </p>
 
                                 <h1
-                                    class="text-4xl font-bold leading-[1.05] tracking-tight text-[#15281c] xl:text-5xl dark:text-[#cee2b1]"
+                                    class="text-4xl leading-[1.05] font-bold tracking-tight text-[#15281c] xl:text-5xl dark:text-[#cee2b1]"
                                 >
                                     Your learning,
                                     <br />
@@ -202,7 +203,9 @@ defineProps<{
                             </div>
 
                             <!-- Footer -->
-                            <p class="text-xs text-[#1e2922]/60 dark:text-[#cee2b1]/60">
+                            <p
+                                class="text-xs text-[#1e2922]/60 dark:text-[#cee2b1]/60"
+                            >
                                 FacultyHUB Student Portal
                             </p>
                         </div>
@@ -296,7 +299,6 @@ defineProps<{
                                         class="h-auto w-44 object-contain object-left"
                                     />
                                 </div>
-
                             </Link>
 
                             <!-- Heading -->
@@ -310,18 +312,13 @@ defineProps<{
                                 <p
                                     class="mt-2 text-sm leading-6 text-muted-foreground"
                                 >
-                                    Enter your email and password to continue
-                                    to FacultyHUB.
+                                    Enter your email and password to continue to
+                                    FacultyHUB.
                                 </p>
                             </div>
 
                             <!-- Status -->
-                            <div
-                                v-if="status"
-                                class="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
-                            >
-                                {{ status }}
-                            </div>
+                            <AuthStatusMessage :message="status" class="mb-6" />
 
                             <!-- Form -->
                             <Form
@@ -349,9 +346,7 @@ defineProps<{
                                             class="h-11"
                                         />
 
-                                        <InputError
-                                            :message="errors.email"
-                                        />
+                                        <InputError :message="errors.email" />
                                     </div>
 
                                     <!-- Password -->
