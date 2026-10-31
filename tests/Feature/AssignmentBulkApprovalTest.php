@@ -137,6 +137,47 @@ it('approves only selected submissions and preserves an existing manual grade', 
         ->and($other->fresh()->status)->toBe('graded');
 });
 
+it('returns the original encrypted selection references and filters searched pages authoritatively', function () {
+    ['faculty' => $faculty, 'assignment' => $assignment] = bulkApprovalFixture();
+    $eligible = addBulkApprovalSubmission($assignment, 'graded', 16);
+    $approved = addBulkApprovalSubmission($assignment, 'approved', 10);
+    $assignmentId = Crypt::encryptString((string) $assignment->id);
+
+    $this->actingAs($faculty);
+    $pageOne = $this->getJson(route('assignments.submissions.data', [
+        'id' => $assignmentId,
+        'per_page' => 1,
+        'page' => 1,
+        'search' => 'Bulk',
+    ]))->assertOk();
+    $pageTwo = $this->getJson(route('assignments.submissions.data', [
+        'id' => $assignmentId,
+        'per_page' => 1,
+        'page' => 2,
+        'search' => 'Bulk',
+    ]))->assertOk();
+
+    $ids = [
+        $pageOne->json('data.0.id'),
+        $pageTwo->json('data.0.id'),
+    ];
+    $eligibleReference = collect($ids)
+        ->first(fn (string $id) => (int) Crypt::decryptString($id) === $eligible->id);
+    expect($pageOne->json('pagination.total'))->toBe(2)
+        ->and($pageTwo->json('pagination.current_page'))->toBe(2);
+
+    $preview = $this->postJson(
+        route('assignments.submissions.bulk-approve', $assignmentId),
+        ['operation' => 'preview', 'mode' => 'selected', 'submission_ids' => $ids],
+    )->assertOk()
+        ->assertJsonPath('data.eligible', 1)
+        ->assertJsonPath('data.already_approved', 1)
+        ->assertJsonPath('data.eligible_ids', [$eligibleReference]);
+
+    expect($eligible->fresh()->status)->toBe('graded')
+        ->and($approved->fresh()->status)->toBe('approved');
+});
+
 it('skips incomplete, flagged, and unresolved AI grading submissions', function () {
     ['faculty' => $faculty, 'assignment' => $assignment] = bulkApprovalFixture();
     $pending = addBulkApprovalSubmission($assignment, 'pending', 10);
@@ -179,6 +220,50 @@ it('skips incomplete, flagged, and unresolved AI grading submissions', function 
         ->and($unscored->fresh()->status)->toBe('graded')
         ->and($flagged->fresh()->status)->toBe('graded')
         ->and($unknown->fresh()->status)->toBe('graded');
+});
+
+it('allows a newer completed AI result to resolve older ordinary failures but retains unknown-outcome protection', function () {
+    ['faculty' => $faculty, 'assignment' => $assignment] = bulkApprovalFixture();
+    $resolved = addBulkApprovalSubmission($assignment, 'graded', 15);
+    $unknown = addBulkApprovalSubmission($assignment, 'graded', 13);
+    $makeRun = fn () => AiProcessingRun::create([
+        'owner_id' => $faculty->id,
+        'resource_type' => Assignment::class,
+        'resource_id' => $assignment->id,
+        'processing_type' => 'grading',
+        'status' => 'completed',
+        'total_work_units' => 1,
+    ]);
+    $failedRun = $makeRun();
+    $resolvedRun = $makeRun();
+    $unknownRun = $makeRun();
+    $unknownCompletedRun = $makeRun();
+
+    foreach ([
+        [$failedRun, $resolved, 'failed', 'provider_request_failed'],
+        [$resolvedRun, $resolved, 'completed', null],
+        [$unknownRun, $unknown, 'pending', 'outcome_unknown'],
+        [$unknownCompletedRun, $unknown, 'completed', null],
+    ] as [$run, $submission, $status, $errorCode]) {
+        AiGradingRunSubmission::create([
+            'ai_processing_run_id' => $run->id,
+            'submission_id' => $submission->id,
+            'content' => 'saved snapshot',
+            'content_hash' => hash('sha256', 'saved snapshot'),
+            'status' => $status,
+            'attempt_count' => 1,
+            'error_code' => $errorCode,
+        ]);
+    }
+
+    $assignmentId = Crypt::encryptString((string) $assignment->id);
+    $response = $this->actingAs($faculty)->postJson(
+        route('assignments.submissions.bulk-approve', $assignmentId),
+        bulkApprovalPayload('preview', 'selected', [$resolved, $unknown]),
+    )->assertOk();
+
+    expect($response->json('data.eligible'))->toBe(1)
+        ->and($response->json('data.requires_individual_review'))->toBe(1);
 });
 
 it('is idempotent, rechecks state at approval time, and rejects unauthorized or cross-assignment submissions', function () {

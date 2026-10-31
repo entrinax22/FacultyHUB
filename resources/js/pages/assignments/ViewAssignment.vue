@@ -32,7 +32,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
-import { showApiError, showApiToast } from '@/lib/flashToast';
+import { toggleEligibleSelection } from '@/lib/bulkSelection';
+import { showApiError, showApiToast, showApiWarning } from '@/lib/flashToast';
 import { sanitizeRichText } from '@/lib/richText';
 
 /*
@@ -310,6 +311,8 @@ const bulkDialogOpen = ref(false);
 const bulkPreviewLoading = ref(false);
 
 const bulkApplying = ref(false);
+
+const selectionProcessing = ref(false);
 
 const bulkMode = ref<'selected' | 'all'>('selected');
 
@@ -592,30 +595,64 @@ async function selectEligibleOnPage() {
         return;
     }
 
+    selectionProcessing.value = true;
+
     try {
         const response = await axios.post(
             `/assignments/${props.assignment.id}/submissions/bulk-approve`,
             { operation: 'preview', mode: 'selected', submission_ids: ids },
         );
         const eligibleIds = response.data.data.eligible_ids as string[];
-        selectedSubmissionIds.value = Array.from(
-            new Set([...selectedSubmissionIds.value, ...eligibleIds]),
+        selectedSubmissionIds.value = toggleEligibleSelection(
+            selectedSubmissionIds.value,
+            eligibleIds,
         );
     } catch (requestError) {
         showApiError(requestError);
+    } finally {
+        selectionProcessing.value = false;
     }
 }
 
-function setSubmissionSelected(id: string, checked: boolean | 'indeterminate') {
+async function setSubmissionSelected(
+    id: string,
+    checked: boolean | 'indeterminate',
+) {
     const selected = new Set(selectedSubmissionIds.value);
 
-    if (checked === true) {
-        selected.add(id);
-    } else {
+    if (checked !== true) {
         selected.delete(id);
+        selectedSubmissionIds.value = [...selected];
+
+        return;
     }
 
-    selectedSubmissionIds.value = [...selected];
+    selectionProcessing.value = true;
+
+    try {
+        const response = await axios.post(
+            `/assignments/${props.assignment.id}/submissions/bulk-approve`,
+            { operation: 'preview', mode: 'selected', submission_ids: [id] },
+        );
+        const eligibleIds = response.data.data.eligible_ids as string[];
+
+        if (!eligibleIds.includes(id)) {
+            showApiWarning({
+                data: {
+                    message: 'This submission requires individual review.',
+                },
+            });
+
+            return;
+        }
+
+        selected.add(id);
+        selectedSubmissionIds.value = [...selected];
+    } catch (requestError) {
+        showApiError(requestError);
+    } finally {
+        selectionProcessing.value = false;
+    }
 }
 
 async function openBulkReview(mode: 'selected' | 'all') {
@@ -638,6 +675,13 @@ async function openBulkReview(mode: 'selected' | 'all') {
             },
         );
         bulkPreview.value = response.data.data as BulkPreview;
+
+        if (mode === 'selected') {
+            selectedSubmissionIds.value = [
+                ...(bulkPreview.value.eligible_ids ?? []),
+            ];
+        }
+
         bulkDialogOpen.value = true;
     } catch (requestError) {
         showApiError(requestError);
@@ -1198,7 +1242,9 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                 <Button
                     variant="outline"
                     size="sm"
-                    :disabled="loading || bulkPreviewLoading"
+                    :disabled="
+                        loading || bulkPreviewLoading || selectionProcessing
+                    "
                     @click="selectEligibleOnPage"
                 >
                     Select eligible on this page
@@ -1209,6 +1255,7 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                     :disabled="
                         !selectedSubmissionIds.length ||
                         bulkPreviewLoading ||
+                        selectionProcessing ||
                         bulkApplying
                     "
                     @click="openBulkReview('selected')"
@@ -1224,7 +1271,12 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                 </Button>
                 <Button
                     size="sm"
-                    :disabled="loading || bulkPreviewLoading || bulkApplying"
+                    :disabled="
+                        loading ||
+                        bulkPreviewLoading ||
+                        selectionProcessing ||
+                        bulkApplying
+                    "
                     @click="openBulkReview('all')"
                 >
                     {{
@@ -1289,7 +1341,9 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                         <Checkbox
                             :checked="selectedSubmissionIds.includes(row.id)"
                             :disabled="
-                                row.status === 'approved' || bulkApplying
+                                row.status === 'approved' ||
+                                bulkApplying ||
+                                selectionProcessing
                             "
                             :aria-label="`Select ${row.student.last_name}, ${row.student.first_name}`"
                             @update:checked="

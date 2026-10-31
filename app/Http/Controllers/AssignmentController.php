@@ -395,15 +395,14 @@ class AssignmentController extends Controller
                             |
                             */
 
-                            ->orWhereRaw(
-                                "CONCAT(first_name, ' ', last_name) LIKE ?",
-                                ["%{$search}%"]
-                            )
-
-                            ->orWhereRaw(
-                                "CONCAT(last_name, ' ', first_name) LIKE ?",
-                                ["%{$search}%"]
-                            );
+                            ->orWhere(function ($nameQuery) use ($search) {
+                                foreach (preg_split('/\s+/', trim($search), -1, PREG_SPLIT_NO_EMPTY) as $term) {
+                                    $nameQuery->where(function ($partQuery) use ($term) {
+                                        $partQuery->where('first_name', 'like', "%{$term}%")
+                                            ->orWhere('last_name', 'like', "%{$term}%");
+                                    });
+                                }
+                            });
                         });
                     }
                 );

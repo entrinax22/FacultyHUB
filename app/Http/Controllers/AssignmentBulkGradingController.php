@@ -33,9 +33,10 @@ class AssignmentBulkGradingController extends Controller
             'submission_ids.*' => ['required', 'string', 'distinct'],
         ]);
 
-        $selectedIds = $validated['mode'] === 'selected'
-            ? $this->resolveSubmissionIds($validated['submission_ids'] ?? [], $assignment)
+        $selectedReferences = $validated['mode'] === 'selected'
+            ? $this->resolveSubmissionReferences($validated['submission_ids'] ?? [], $assignment)
             : null;
+        $selectedIds = $selectedReferences === null ? null : array_keys($selectedReferences);
 
         if ($validated['operation'] === 'preview') {
             $counts = [
@@ -44,7 +45,7 @@ class AssignmentBulkGradingController extends Controller
                 'requires_individual_review' => 0,
             ];
             $eligibleIds = [];
-            $this->eachSubmissionChunk($assignment, $selectedIds, function ($submissions) use (&$counts, &$eligibleIds, $assignment, $selectedIds) {
+            $this->eachSubmissionChunk($assignment, $selectedIds, function ($submissions) use (&$counts, &$eligibleIds, $assignment, $selectedReferences) {
                 $blocked = $this->blockedSubmissionIds($assignment, $submissions);
                 foreach ($submissions as $submission) {
                     $reason = $this->ineligibilityReason($submission, $blocked, $assignment->max_score);
@@ -52,8 +53,8 @@ class AssignmentBulkGradingController extends Controller
                         $counts['already_approved']++;
                     } elseif ($reason === null) {
                         $counts['eligible']++;
-                        if ($selectedIds !== null) {
-                            $eligibleIds[] = Crypt::encryptString((string) $submission->id);
+                        if ($selectedReferences !== null) {
+                            $eligibleIds[] = $selectedReferences[$submission->id];
                         }
                     } else {
                         $counts['requires_individual_review']++;
@@ -223,18 +224,23 @@ class AssignmentBulkGradingController extends Controller
             ->pluck('id')
             ->all();
 
-        $unresolvedIds = AiGradingRunSubmission::query()
+        $gradingWork = AiGradingRunSubmission::query()
             ->whereIn('submission_id', $submissionIds)
-            ->where(function ($query) {
-                $query->where('status', '!=', AiGradingRunSubmission::STATUS_COMPLETED)
-                    ->orWhereNotNull('error_code');
-            })
+            ->orderBy('id')
+            ->get(['id', 'submission_id', 'status', 'error_code']);
+        $unknownIds = $gradingWork
+            ->whereIn('error_code', ['outcome_unknown', 'provider_in_flight'])
+            ->pluck('submission_id')
+            ->all();
+        $latestWork = $gradingWork->groupBy('submission_id')->map->last();
+        $latestUnresolvedIds = $latestWork
+            ->filter(fn ($work) => $work->status !== AiGradingRunSubmission::STATUS_COMPLETED || $work->error_code !== null)
             ->pluck('submission_id')
             ->all();
 
         return [
             'integrity' => array_fill_keys($flaggedIds, true),
-            'grading' => array_fill_keys($unresolvedIds, true),
+            'grading' => array_fill_keys(array_unique([...$unknownIds, ...$latestUnresolvedIds]), true),
         ];
     }
 
@@ -270,22 +276,22 @@ class AssignmentBulkGradingController extends Controller
         }
     }
 
-    private function resolveSubmissionIds(array $encryptedIds, Assignment $assignment): array
+    private function resolveSubmissionReferences(array $encryptedIds, Assignment $assignment): array
     {
-        $ids = [];
+        $references = [];
         foreach ($encryptedIds as $encryptedId) {
             try {
-                $ids[] = (int) Crypt::decryptString($encryptedId);
+                $references[(int) Crypt::decryptString($encryptedId)] = $encryptedId;
             } catch (\Throwable) {
                 throw ValidationException::withMessages(['submission_ids' => 'One or more selected submissions are invalid.']);
             }
         }
-        $ids = array_values(array_unique($ids));
+        $ids = array_keys($references);
 
         if (count($ids) !== Submission::query()->where('assignment_id', $assignment->id)->whereIn('id', $ids)->count()) {
             throw ValidationException::withMessages(['submission_ids' => 'Selected submissions must belong to this assignment.']);
         }
 
-        return $ids;
+        return $references;
     }
 }
