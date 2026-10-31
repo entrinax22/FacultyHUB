@@ -9,6 +9,7 @@ use App\Http\Controllers\AttendanceSessionController;
 use App\Http\Controllers\ClassRecordController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GradingComponentController;
+use App\Http\Controllers\AssignmentBulkGradingController;
 use App\Http\Controllers\GradingController;
 use App\Http\Controllers\GradingItemController;
 use App\Http\Controllers\ModuleController;
@@ -126,6 +127,7 @@ Route::middleware(['auth', 'verified', 'role:faculty,admin', 'faculty.resource']
     Route::post('sections/{sectionId}/assignments', [AssignmentController::class, 'store'])->name('sections.assignments.store');
     Route::get('assignments/{id}', [AssignmentController::class, 'show'])->name('assignments.show');
     Route::get('assignments/{id}/submissions/data', [AssignmentController::class, 'submissionsData'])->name('assignments.submissions.data');
+    Route::post('assignments/{id}/submissions/bulk-approve', AssignmentBulkGradingController::class)->name('assignments.submissions.bulk-approve');
     Route::get('assignments/{id}/edit', [AssignmentController::class, 'edit'])->name('assignments.edit');
     Route::put('assignments/{id}', [AssignmentController::class, 'update'])->name('assignments.update');
     Route::delete('assignments/{id}', [AssignmentController::class, 'destroy'])->name('assignments.destroy');

@@ -467,6 +467,11 @@ class AssignmentController extends Controller
                         $submissions
                     ),
 
+                'status_counts' => $assignment->submissions()
+                    ->selectRaw('status, COUNT(*) as aggregate')
+                    ->groupBy('status')
+                    ->pluck('aggregate', 'status'),
+
                 'filters' => [
                     'search' =>
                         $search ?: null,

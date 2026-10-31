@@ -21,6 +21,15 @@ import SectionBackLink from '@/components/SectionBackLink.vue';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 import { showApiError, showApiToast } from '@/lib/flashToast';
@@ -164,6 +173,14 @@ type SubmissionsResponse = {
     message: string;
     data: Submission[];
     pagination: Pagination;
+    status_counts?: Record<string, number>;
+};
+
+type BulkPreview = {
+    eligible: number;
+    already_approved: number;
+    requires_individual_review: number;
+    eligible_ids?: string[];
 };
 
 /*
@@ -286,6 +303,18 @@ const error = ref<string | null>(null);
 
 const processingRelease = ref(false);
 
+const selectedSubmissionIds = ref<string[]>([]);
+
+const bulkDialogOpen = ref(false);
+
+const bulkPreviewLoading = ref(false);
+
+const bulkApplying = ref(false);
+
+const bulkMode = ref<'selected' | 'all'>('selected');
+
+const bulkPreview = ref<BulkPreview | null>(null);
+
 const expandedSubmissionId = ref<string | null>(null);
 
 const instructionsContent = ref<HTMLElement | null>(null);
@@ -320,6 +349,11 @@ function measureInstructions() {
 */
 
 const columns = [
+    {
+        key: 'select',
+        label: 'Select',
+        class: 'w-16 text-center',
+    },
     {
         key: 'student',
         label: 'Student',
@@ -399,7 +433,14 @@ async function loadSubmissions(page = 1, perPage?: number) {
 
             pagination.value = response.data.pagination;
 
-            updateCounts();
+            if (response.data.status_counts) {
+                const counts = response.data.status_counts;
+                gradedCount.value =
+                    (counts.graded ?? 0) + (counts.approved ?? 0);
+                approvedCount.value = counts.approved ?? 0;
+            } else {
+                updateCounts();
+            }
         } else {
             error.value =
                 response.data.message || 'Failed to load submissions.';
@@ -542,6 +583,113 @@ function updateCounts() {
     ).length;
 }
 
+async function selectEligibleOnPage() {
+    const ids = submissions.value
+        .filter((submission) => submission.status !== 'approved')
+        .map((submission) => submission.id);
+
+    if (!ids.length) {
+        return;
+    }
+
+    try {
+        const response = await axios.post(
+            `/assignments/${props.assignment.id}/submissions/bulk-approve`,
+            { operation: 'preview', mode: 'selected', submission_ids: ids },
+        );
+        const eligibleIds = response.data.data.eligible_ids as string[];
+        selectedSubmissionIds.value = Array.from(
+            new Set([...selectedSubmissionIds.value, ...eligibleIds]),
+        );
+    } catch (requestError) {
+        showApiError(requestError);
+    }
+}
+
+function setSubmissionSelected(id: string, checked: boolean | 'indeterminate') {
+    const selected = new Set(selectedSubmissionIds.value);
+
+    if (checked === true) {
+        selected.add(id);
+    } else {
+        selected.delete(id);
+    }
+
+    selectedSubmissionIds.value = [...selected];
+}
+
+async function openBulkReview(mode: 'selected' | 'all') {
+    if (mode === 'selected' && selectedSubmissionIds.value.length === 0) {
+        return;
+    }
+
+    bulkMode.value = mode;
+    bulkPreviewLoading.value = true;
+
+    try {
+        const response = await axios.post(
+            `/assignments/${props.assignment.id}/submissions/bulk-approve`,
+            {
+                operation: 'preview',
+                mode,
+                ...(mode === 'selected'
+                    ? { submission_ids: selectedSubmissionIds.value }
+                    : {}),
+            },
+        );
+        bulkPreview.value = response.data.data as BulkPreview;
+        bulkDialogOpen.value = true;
+    } catch (requestError) {
+        showApiError(requestError);
+    } finally {
+        bulkPreviewLoading.value = false;
+    }
+}
+
+async function confirmBulkApproval() {
+    if (!bulkPreview.value?.eligible || bulkApplying.value) {
+        return;
+    }
+
+    bulkApplying.value = true;
+
+    try {
+        const response = await axios.post(
+            `/assignments/${props.assignment.id}/submissions/bulk-approve`,
+            {
+                operation: 'approve',
+                mode: bulkMode.value,
+                ...(bulkMode.value === 'selected'
+                    ? { submission_ids: selectedSubmissionIds.value }
+                    : {}),
+            },
+        );
+        const reasons = response.data.data.reasons as Record<string, number>;
+        const reasonSummary = Object.entries(reasons)
+            .map(([reason, count]) => `${count}: ${reason}`)
+            .join('; ');
+
+        if (reasonSummary) {
+            response.data.message = `${response.data.message} ${reasonSummary}.`;
+        }
+
+        showApiToast(response);
+        selectedSubmissionIds.value = [];
+        bulkDialogOpen.value = false;
+        const counts = response.data.data.status_counts as Record<
+            string,
+            number
+        >;
+        gradedCount.value = (counts.graded ?? 0) + (counts.approved ?? 0);
+        approvedCount.value = counts.approved ?? 0;
+        await loadSubmissions(pagination.value?.current_page ?? 1);
+    } catch (requestError) {
+        showApiError(requestError);
+    } finally {
+        bulkApplying.value = false;
+    }
+}
+
 /*
 |--------------------------------------------------------------------------
 | Initial Load
@@ -572,7 +720,11 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
 
         <SectionBackLink
             class="-mb-3"
-            :href="assignment.section?.id ? `/sections/${assignment.section.id}/assignments` : '/sections'"
+            :href="
+                assignment.section?.id
+                    ? `/sections/${assignment.section.id}/assignments`
+                    : '/sections'
+            "
             label="Back to Assignments"
         />
         <div
@@ -615,10 +767,10 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
             </div>
 
             <div class="flex flex-wrap gap-2">
-
-
                 <Button size="sm" as-child>
-                    <Link :href="`/assignments/${assignment.id}/edit?back=assignment`">
+                    <Link
+                        :href="`/assignments/${assignment.id}/edit?back=assignment`"
+                    >
                         <Edit class="mr-1.5 h-4 w-4" />
                         Edit Assignment
                     </Link>
@@ -1042,6 +1194,47 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                 </p>
             </div>
 
+            <div class="flex flex-wrap items-center gap-2">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="loading || bulkPreviewLoading"
+                    @click="selectEligibleOnPage"
+                >
+                    Select eligible on this page
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="
+                        !selectedSubmissionIds.length ||
+                        bulkPreviewLoading ||
+                        bulkApplying
+                    "
+                    @click="openBulkReview('selected')"
+                >
+                    {{
+                        bulkPreviewLoading && bulkMode === 'selected'
+                            ? 'Checking…'
+                            : 'Review & Approve Selected'
+                    }}
+                    <span v-if="selectedSubmissionIds.length" class="ml-1"
+                        >({{ selectedSubmissionIds.length }})</span
+                    >
+                </Button>
+                <Button
+                    size="sm"
+                    :disabled="loading || bulkPreviewLoading || bulkApplying"
+                    @click="openBulkReview('all')"
+                >
+                    {{
+                        bulkPreviewLoading && bulkMode === 'all'
+                            ? 'Checking…'
+                            : 'Review & Approve All Eligible'
+                    }}
+                </Button>
+            </div>
+
             <!-- ======================================================== -->
             <!-- Submissions Table -->
             <!-- ======================================================== -->
@@ -1082,6 +1275,27 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                         >
                             Search
                         </Button>
+                    </div>
+                </template>
+
+                <template #header-select>
+                    <span class="sr-only"
+                        >Select submissions for bulk approval</span
+                    >
+                </template>
+
+                <template #cell-select="{ row }">
+                    <div class="flex justify-center">
+                        <Checkbox
+                            :checked="selectedSubmissionIds.includes(row.id)"
+                            :disabled="
+                                row.status === 'approved' || bulkApplying
+                            "
+                            :aria-label="`Select ${row.student.last_name}, ${row.student.first_name}`"
+                            @update:checked="
+                                setSubmissionSelected(row.id, $event)
+                            "
+                        />
                     </div>
                 </template>
 
@@ -1209,6 +1423,68 @@ onBeforeUnmount(() => instructionsResizeObserver?.disconnect());
                 </template>
             </BaseTable>
         </div>
+
+        <Dialog v-model:open="bulkDialogOpen">
+            <DialogContent class="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle
+                        >Review and approve assignment grades?</DialogTitle
+                    >
+                    <DialogDescription>
+                        {{
+                            bulkMode === 'all'
+                                ? 'All submissions in this assignment'
+                                : 'The selected submissions'
+                        }}
+                        will be rechecked before saving. Final grades will be
+                        saved and marked approved.
+                    </DialogDescription>
+                </DialogHeader>
+                <div
+                    v-if="bulkPreview"
+                    class="space-y-2 rounded-md border p-4 text-sm"
+                >
+                    <p>
+                        <strong>{{ bulkPreview.eligible }}</strong> eligible for
+                        approval
+                    </p>
+                    <p>
+                        <strong>{{ bulkPreview.already_approved }}</strong>
+                        already approved
+                    </p>
+                    <p>
+                        <strong>{{
+                            bulkPreview.requires_individual_review
+                        }}</strong>
+                        require individual review
+                    </p>
+                </div>
+                <p class="text-sm text-muted-foreground">
+                    Pending or incomplete grading, unresolved AI errors,
+                    unavailable scores, and flagged academic integrity results
+                    are skipped. This confirmation is required because the
+                    operation saves final grades.
+                </p>
+                <DialogFooter class="gap-2">
+                    <Button
+                        variant="outline"
+                        :disabled="bulkApplying"
+                        @click="bulkDialogOpen = false"
+                        >Cancel</Button
+                    >
+                    <Button
+                        :disabled="bulkApplying || !bulkPreview?.eligible"
+                        @click="confirmBulkApproval"
+                    >
+                        <Loader2
+                            v-if="bulkApplying"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
+                        Confirm and save grades
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
 
         <!-- ============================================================ -->
         <!-- Expanded Proctoring Events -->
