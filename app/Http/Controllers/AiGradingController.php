@@ -73,10 +73,15 @@ class AiGradingController extends Controller
         if (! $run || ! $run->isActive()) {
             return $this->failure('This AI grading run is not available for processing.', 422);
         }
+        $validated = $request->validate(['confirm_unknown' => ['sometimes', 'accepted']]);
 
         try {
             if ($run->queue_generation > 0) {
-                $run = $processing->resumeQueuedGradingRun($run, $request->user());
+                $run = $processing->resumeQueuedGradingRun(
+                    $run,
+                    $request->user(),
+                    (bool) ($validated['confirm_unknown'] ?? false)
+                );
 
                 return $this->success('AI grading batch checked.', $processing->gradingRunStatus($run, $request->user()) + ['outcome' => 'no_eligible_work']);
             }
@@ -102,6 +107,8 @@ class AiGradingController extends Controller
                 'message' => 'This AI grading run is already being processed.',
                 'data' => $processing->gradingRunStatus($run->fresh(), $request->user()),
             ], 422);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failure($exception->getMessage(), 422);
         } catch (\Throwable $exception) {
             report($exception);
 

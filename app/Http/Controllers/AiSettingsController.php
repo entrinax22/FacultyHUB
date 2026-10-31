@@ -2,17 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiSetting;
+use App\Models\AiProcessingBudgetWindow;
 use App\Models\AiProviderConfig;
+use App\Models\AiSetting;
+use App\Services\AiProcessingRunService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AiSettingsController extends Controller
 {
+    private const MAX_GRADING_DAILY_REQUESTS = 10000;
+
+    private const MAX_GRADING_DAILY_TOKENS = 10000000;
+
+    private const MAX_GRADING_REQUESTS_PER_MINUTE = 120;
+
     /**
      * Inertia page.
      */
@@ -64,6 +74,7 @@ class AiSettingsController extends Controller
                             $this->formatProvider($provider)
                         )
                         ->values(),
+                    'grading_budget' => $this->gradingBudgetPayload($settings),
                 ],
             ], 200);
 
@@ -173,6 +184,88 @@ class AiSettingsController extends Controller
                 'data' => null,
             ], 500);
         }
+    }
+
+    public function updateGradingBudget(Request $request, AiProcessingRunService $processing): JsonResponse
+    {
+        $validated = $request->validate([
+            'grading_daily_request_budget' => ['required', 'integer', 'between:1,'.self::MAX_GRADING_DAILY_REQUESTS],
+            'grading_daily_input_token_budget' => ['required', 'integer', 'between:1,'.self::MAX_GRADING_DAILY_TOKENS],
+            'grading_requests_per_minute' => ['required', 'integer', 'between:1,'.self::MAX_GRADING_REQUESTS_PER_MINUTE],
+            'grading_auto_continue' => ['required', 'boolean'],
+        ]);
+
+        try {
+            $settings = DB::transaction(function () use ($validated) {
+                $settings = AiSetting::query()->lockForUpdate()->first() ?? AiSetting::current();
+                $settings->update($validated);
+
+                return $settings->fresh();
+            });
+
+            if ($settings->grading_auto_continue) {
+                $processing->reevaluatePausedGradingRuns();
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'AI grading budget settings updated successfully.',
+                'data' => ['grading_budget' => $this->gradingBudgetPayload($settings)],
+            ], 200);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update AI grading budget settings.',
+                'data' => null,
+            ], 500);
+        }
+    }
+
+    private function gradingBudgetPayload(AiSetting $settings): array
+    {
+        $timezone = (string) config('ai_processing.grading_budget_timezone', 'America/Los_Angeles');
+        $now = now($timezone);
+        $dailyStart = $now->copy()->startOfDay()->utc();
+        $minuteStart = $now->copy()->startOfMinute()->utc();
+        $scope = AiProcessingBudgetWindow::query()
+            ->where('provider', 'gemini')
+            ->where('category', 'grading');
+        $dailyUsage = (clone $scope)->where('window_type', 'daily')
+            ->where('window_starts_at', $dailyStart)
+            ->selectRaw('COALESCE(SUM(request_count), 0) as request_count, COALESCE(SUM(estimated_input_tokens), 0) as estimated_input_tokens')
+            ->first();
+        $minuteUsage = (clone $scope)->where('window_type', 'minute')
+            ->where('window_starts_at', $minuteStart)
+            ->sum('request_count');
+        $dailyRequests = (int) $dailyUsage->request_count;
+        $dailyTokens = (int) $dailyUsage->estimated_input_tokens;
+        $minuteRequests = (int) $minuteUsage;
+
+        return [
+            'settings' => [
+                'grading_daily_request_budget' => $settings->grading_daily_request_budget,
+                'grading_daily_input_token_budget' => $settings->grading_daily_input_token_budget,
+                'grading_requests_per_minute' => $settings->grading_requests_per_minute,
+                'grading_auto_continue' => $settings->grading_auto_continue,
+            ],
+            'usage' => [
+                'daily_requests_used' => $dailyRequests,
+                'daily_requests_remaining' => max(0, $settings->grading_daily_request_budget - $dailyRequests),
+                'daily_tokens_used' => $dailyTokens,
+                'daily_tokens_remaining' => max(0, $settings->grading_daily_input_token_budget - $dailyTokens),
+                'minute_requests_used' => $minuteRequests,
+                'minute_requests_remaining' => max(0, $settings->grading_requests_per_minute - $minuteRequests),
+                'daily_reset_at' => $now->copy()->addDay()->startOfDay()->utc()->toIso8601String(),
+                'minute_reset_at' => $now->copy()->addMinute()->startOfMinute()->utc()->toIso8601String(),
+            ],
+            'bounds' => [
+                'grading_daily_request_budget' => ['min' => 1, 'max' => self::MAX_GRADING_DAILY_REQUESTS],
+                'grading_daily_input_token_budget' => ['min' => 1, 'max' => self::MAX_GRADING_DAILY_TOKENS],
+                'grading_requests_per_minute' => ['min' => 1, 'max' => self::MAX_GRADING_REQUESTS_PER_MINUTE],
+            ],
+        ];
     }
 
     /**

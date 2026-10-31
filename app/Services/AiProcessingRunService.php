@@ -7,6 +7,7 @@ use App\Models\AiFeedback;
 use App\Models\AiGradingRunSubmission;
 use App\Models\AiProcessingBudgetWindow;
 use App\Models\AiProcessingRun;
+use App\Models\AiSetting;
 use App\Models\Assignment;
 use App\Models\PlagiarismReport;
 use App\Models\PlagiarismRunPair;
@@ -15,6 +16,7 @@ use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -24,6 +26,7 @@ class AiProcessingRunService
     private const RETRYABLE_GRADING_ERRORS = [
         'provider_rate_limited', 'provider_unavailable', 'provider_request_failed', 'invalid_response', 'outcome_unknown',
     ];
+
     public function startQueuedGradingBatch(User $owner, Assignment $assignment): AiProcessingRun
     {
         $this->ensureGradingQueueConnection();
@@ -55,12 +58,12 @@ class AiProcessingRunService
         });
     }
 
-    public function resumeQueuedGradingRun(AiProcessingRun $run, User $owner): AiProcessingRun
+    public function resumeQueuedGradingRun(AiProcessingRun $run, User $owner, bool $confirmUnknown = false): AiProcessingRun
     {
         $this->ensureGradingQueueConnection();
         $this->authorizeRun($owner, $run);
 
-        return DB::transaction(function () use ($run) {
+        return DB::transaction(function () use ($run, $confirmUnknown) {
             $run = AiProcessingRun::query()->lockForUpdate()->findOrFail($run->id);
             if ($run->queue_generation < 1 || ! $run->isActive()) {
                 throw new \InvalidArgumentException('This batch cannot be resumed.');
@@ -81,6 +84,14 @@ class AiProcessingRunService
                 }
             }
 
+            $unknownPending = $run->gradingSubmissions()
+                ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->whereIn('error_code', ['outcome_unknown', 'provider_in_flight']);
+            if ((clone $unknownPending)->exists() && ! $confirmUnknown) {
+                throw new \InvalidArgumentException('Confirm that you reviewed pending submissions with an unknown provider outcome before resuming.');
+            }
+            $unknownPending->update(['error_code' => null, 'updated_at' => now()]);
+
             if ($run->error_code === 'budget_exhausted') {
                 $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
                     ->whereIn('error_code', ['budget_daily_requests', 'budget_daily_tokens'])
@@ -91,6 +102,70 @@ class AiProcessingRunService
 
             return $run->fresh();
         });
+    }
+
+    public function reevaluatePausedGradingRuns(): int
+    {
+        if (! AiSetting::current()->grading_auto_continue) {
+            return 0;
+        }
+
+        $scheduled = 0;
+        $runIds = AiProcessingRun::query()
+            ->where('processing_type', AiProcessingRun::TYPE_GRADING)
+            ->where('status', AiProcessingRun::STATUS_PENDING)
+            ->where('preparation_status', AiProcessingRun::PREPARATION_PREPARED)
+            ->whereIn('error_code', ['budget_waiting', 'budget_exhausted'])
+            ->orderBy('id')
+            ->pluck('id');
+
+        foreach ($runIds as $runId) {
+            $wasScheduled = DB::transaction(function () use ($runId) {
+                $settings = AiSetting::query()->lockForUpdate()->first();
+                if (! $settings?->grading_auto_continue) {
+                    return false;
+                }
+
+                $run = AiProcessingRun::query()->lockForUpdate()->find($runId);
+                if (! $run || $run->processing_type !== AiProcessingRun::TYPE_GRADING
+                    || $run->status !== AiProcessingRun::STATUS_PENDING
+                    || ! in_array($run->error_code, ['budget_waiting', 'budget_exhausted'], true)) {
+                    return false;
+                }
+
+                $pendingBudgetWork = $run->gradingSubmissions()
+                    ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens']);
+                if (! (clone $pendingBudgetWork)->exists()) {
+                    return false;
+                }
+                if ($run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->whereIn('error_code', ['outcome_unknown', 'provider_in_flight'])->exists()) {
+                    return false;
+                }
+
+                $jobTable = config('queue.connections.database.table', 'jobs');
+                $job = $run->queue_job_id
+                    ? DB::table($jobTable)->where('id', $run->queue_job_id)->lockForUpdate()->first(['id', 'available_at', 'reserved_at'])
+                    : null;
+                if ($job && ($job->reserved_at !== null || $job->available_at <= now()->timestamp)) {
+                    return false;
+                }
+                if ($job) {
+                    DB::table($jobTable)->where('id', $job->id)->delete();
+                }
+
+                $pendingBudgetWork->update(['error_code' => null, 'next_eligible_at' => null, 'updated_at' => now()]);
+                $run->update(['error_code' => null, 'queue_job_id' => null]);
+                $this->enqueueGradingRun($run);
+
+                return true;
+            });
+
+            $scheduled += (int) $wasScheduled;
+        }
+
+        return $scheduled;
     }
 
     private function ensureGradingQueueConnection(): void
@@ -146,9 +221,22 @@ class AiProcessingRunService
             if (! $run || $run->queue_generation !== $generation || ! $run->isActive()) {
                 return null;
             }
-            if ($run->error_code === 'budget_waiting' && $run->gradingSubmissions()
-                ->where('status', AiGradingRunSubmission::STATUS_PENDING)
-                ->where('error_code', 'budget_minute_requests')->where('next_eligible_at', '>', now())->exists()) {
+            if (in_array($run->error_code, ['budget_waiting', 'budget_exhausted'], true)
+                && ! AiSetting::current()->grading_auto_continue) {
+                $run->update(['queue_job_id' => null]);
+
+                return null;
+            }
+            if ($run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                ->whereIn('error_code', ['outcome_unknown', 'provider_in_flight'])->exists()) {
+                $run->update(['error_code' => 'outcome_unknown', 'queue_job_id' => null]);
+
+                return null;
+            }
+            if (in_array($run->error_code, ['budget_waiting', 'budget_exhausted'], true)
+                && $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens'])
+                    ->where('next_eligible_at', '>', now())->exists()) {
                 return null;
             }
 
@@ -179,19 +267,26 @@ class AiProcessingRunService
             if ($run->queue_generation !== $generation) {
                 return;
             }
-            if (! $run->isActive() || $run->error_code === 'budget_exhausted') {
+            if (! $run->isActive()) {
                 $run->update(['queue_job_id' => null]);
 
                 return;
             }
-            if ($run->error_code === 'budget_waiting') {
-                $reset = $run->gradingSubmissions()->where('status', AiGradingRunSubmission::STATUS_PENDING)
-                    ->where('error_code', 'budget_minute_requests')->min('next_eligible_at');
-                if ($reset) {
+
+            if (in_array($run->error_code, ['budget_waiting', 'budget_exhausted'], true)) {
+                $reset = $run->gradingSubmissions()
+                    ->where('status', AiGradingRunSubmission::STATUS_PENDING)
+                    ->whereIn('error_code', ['budget_minute_requests', 'budget_daily_requests', 'budget_daily_tokens'])
+                    ->min('next_eligible_at');
+                if ($reset && AiSetting::current()->grading_auto_continue) {
                     $this->enqueueGradingRun($run, max(1, (int) ceil(now()->diffInSeconds(Carbon::parse($reset), false))));
 
                     return;
                 }
+
+                $run->update(['queue_job_id' => null]);
+
+                return;
             }
             if ($run->status === AiProcessingRun::STATUS_PROCESSING) {
                 $delay = $run->lease_expires_at
@@ -865,8 +960,7 @@ class AiProcessingRunService
                 throw new \InvalidArgumentException('This run has no pending submissions to resume. Retry eligible failed submissions separately.');
             }
 
-            $unknownIds = $pending->filter(fn (AiGradingRunSubmission $work) =>
-                in_array($work->error_code, ['outcome_unknown', 'provider_in_flight'], true)
+            $unknownIds = $pending->filter(fn (AiGradingRunSubmission $work) => in_array($work->error_code, ['outcome_unknown', 'provider_in_flight'], true)
             )->pluck('id');
 
             if ($unknownIds->isNotEmpty() && ! $confirmUnknown) {
@@ -964,7 +1058,7 @@ class AiProcessingRunService
         $possiblyStalled = $run->queue_generation > 0 && $run->isActive() && ! $activeLease && ! $delayed
             && (! $job || $overdue || $run->status === AiProcessingRun::STATUS_PROCESSING);
         $monitoringState = match (true) {
-            $unknown > 0 => 'outcome_unknown',
+            $unknown > 0 || $pendingUnknown > 0 => 'outcome_unknown',
             $run->status === AiProcessingRun::STATUS_COMPLETED => 'completed',
             ! $run->isActive() => 'failed',
             $run->error_code === 'budget_exhausted' && $budgetWork?->error_code === 'budget_minute_requests' => 'waiting_minute',
@@ -1001,8 +1095,9 @@ class AiProcessingRunService
             ->orderBy('id')->forPage($failedPage, 10)->get()
             ->map(function (AiGradingRunSubmission $work) use ($canRetry) {
                 $student = $work->submission?->student;
+
                 return [
-                    'submission_id' => $work->submission ? \Illuminate\Support\Facades\Crypt::encryptString((string) $work->submission->id) : null,
+                    'submission_id' => $work->submission ? Crypt::encryptString((string) $work->submission->id) : null,
                     'student_name' => $student ? trim($student->first_name.' '.$student->last_name) : 'Student unavailable',
                     'status' => $work->error_code === 'outcome_unknown' ? 'outcome_unknown' : 'failed',
                     'reason' => match ($work->error_code) {
@@ -1674,16 +1769,51 @@ class AiProcessingRunService
         $minute = $this->budgetWindow($category, 'minute', $model, $now->copy()->startOfMinute()->utc());
 
         return DB::transaction(function () use ($category, $daily, $minute, $estimatedInputTokens, $now) {
+            $settings = null;
+            if ($category === 'grading') {
+                $settings = AiSetting::query()->lockForUpdate()->first() ?? AiSetting::current();
+            }
+
             $daily = $this->lockedBudgetWindow($daily);
             $minute = $this->lockedBudgetWindow($minute);
 
-            if ($daily->request_count + 1 > max(1, (int) config("ai_processing.{$category}_daily_request_budget"))) {
+            if ($category === 'grading') {
+                $dailyUsage = AiProcessingBudgetWindow::query()
+                    ->where('provider', $daily->provider)
+                    ->where('category', $category)
+                    ->where('window_type', 'daily')
+                    ->where('window_starts_at', $daily->window_starts_at)
+                    ->selectRaw('COALESCE(SUM(request_count), 0) as request_count, COALESCE(SUM(estimated_input_tokens), 0) as estimated_input_tokens')
+                    ->first();
+                $minuteUsage = AiProcessingBudgetWindow::query()
+                    ->where('provider', $minute->provider)
+                    ->where('category', $category)
+                    ->where('window_type', 'minute')
+                    ->where('window_starts_at', $minute->window_starts_at)
+                    ->selectRaw('COALESCE(SUM(request_count), 0) as request_count')
+                    ->first();
+                $dailyRequestCount = (int) $dailyUsage->request_count;
+                $dailyTokenCount = (int) $dailyUsage->estimated_input_tokens;
+                $minuteRequestCount = (int) $minuteUsage->request_count;
+                $dailyRequestLimit = (int) $settings->grading_daily_request_budget;
+                $dailyTokenLimit = (int) $settings->grading_daily_input_token_budget;
+                $minuteRequestLimit = (int) $settings->grading_requests_per_minute;
+            } else {
+                $dailyRequestCount = (int) $daily->request_count;
+                $dailyTokenCount = (int) $daily->estimated_input_tokens;
+                $minuteRequestCount = (int) $minute->request_count;
+                $dailyRequestLimit = max(1, (int) config("ai_processing.{$category}_daily_request_budget"));
+                $dailyTokenLimit = max(1, (int) config("ai_processing.{$category}_daily_input_token_budget"));
+                $minuteRequestLimit = max(1, (int) config("ai_processing.{$category}_requests_per_minute"));
+            }
+
+            if ($dailyRequestCount + 1 > $dailyRequestLimit) {
                 return ['reason' => 'budget_daily_requests', 'reset_at' => $now->copy()->addDay()->startOfDay()->utc()];
             }
-            if ($daily->estimated_input_tokens + $estimatedInputTokens > max(1, (int) config("ai_processing.{$category}_daily_input_token_budget"))) {
+            if ($dailyTokenCount + $estimatedInputTokens > $dailyTokenLimit) {
                 return ['reason' => 'budget_daily_tokens', 'reset_at' => $now->copy()->addDay()->startOfDay()->utc()];
             }
-            if ($minute->request_count + 1 > max(1, (int) config("ai_processing.{$category}_requests_per_minute"))) {
+            if ($minuteRequestCount + 1 > $minuteRequestLimit) {
                 return ['reason' => 'budget_minute_requests', 'reset_at' => $now->copy()->addMinute()->startOfMinute()->utc()];
             }
 

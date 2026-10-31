@@ -101,6 +101,7 @@ const loading = ref(true);
 const busy = ref(false);
 const retryDialogOpen = ref(false);
 const recoverDialogOpen = ref(false);
+const resumeUnknownDialogOpen = ref(false);
 const failedPage = ref(1);
 const endpoint = (action: string) =>
     `/assignments/${props.assignmentId}/ai-grading/${action}`;
@@ -237,7 +238,11 @@ async function action(
                   ? { confirm_unknown: true }
                   : name === 'recover' && status.value?.pending_unknown_count
                     ? { confirm_unknown: true }
-                    : undefined;
+                    : name === 'next' &&
+                        status.value?.is_queued_batch &&
+                        status.value.pending_unknown_count
+                      ? { confirm_unknown: true }
+                      : undefined;
         const response = await axios.post<ApiResponse>(endpoint(name), payload);
         status.value = response.data.data;
 
@@ -420,7 +425,11 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                     "
                     size="sm"
                     :disabled="busy"
-                    @click="action('next')"
+                    @click="
+                        status?.is_queued_batch && status.pending_unknown_count
+                            ? (resumeUnknownDialogOpen = true)
+                            : action('next')
+                    "
                 >
                     <Play class="mr-1.5 h-4 w-4" />{{
                         status?.is_queued_batch
@@ -690,6 +699,46 @@ onBeforeUnmount(() => window.clearInterval(pollingTimer));
                         "
                         >Confirm resume</Button
                     >
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+        <Dialog v-model:open="resumeUnknownDialogOpen">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle
+                        >Resume despite an unknown provider
+                        outcome?</DialogTitle
+                    >
+                    <DialogDescription>
+                        {{ status?.pending_unknown_count ?? 0 }} pending
+                        {{
+                            status?.pending_unknown_count === 1
+                                ? 'submission has'
+                                : 'submissions have'
+                        }}
+                        an unresolved provider outcome. The previous AI request
+                        may have completed even though its response was not
+                        recorded. Resuming can repeat that request and incur
+                        additional AI usage.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter class="gap-2">
+                    <Button
+                        variant="outline"
+                        :disabled="busy"
+                        @click="resumeUnknownDialogOpen = false"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        :disabled="busy || loading || !status?.can_resume"
+                        @click="
+                            resumeUnknownDialogOpen = false;
+                            action('next');
+                        "
+                    >
+                        Confirm resume
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

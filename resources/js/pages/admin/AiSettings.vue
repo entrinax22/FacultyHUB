@@ -42,6 +42,26 @@ type Settings = {
     plagiarism_context: string;
 };
 
+type GradingBudget = {
+    settings: {
+        grading_daily_request_budget: number;
+        grading_daily_input_token_budget: number;
+        grading_requests_per_minute: number;
+        grading_auto_continue: boolean;
+    };
+    usage: {
+        daily_requests_used: number;
+        daily_requests_remaining: number;
+        daily_tokens_used: number;
+        daily_tokens_remaining: number;
+        minute_requests_used: number;
+        minute_requests_remaining: number;
+        daily_reset_at: string | null;
+        minute_reset_at: string | null;
+    };
+    bounds: Record<string, { min: number; max: number }>;
+};
+
 type Provider = {
     id: string;
     name: string;
@@ -70,6 +90,7 @@ type AiSettingsResponse = {
     data: {
         settings: Settings;
         providers: Provider[];
+        grading_budget: GradingBudget;
     };
 };
 
@@ -88,6 +109,7 @@ type ApiResponse<T = any> = {
 
 const loading = ref(false);
 const savingContext = ref(false);
+const savingGradingBudget = ref(false);
 const savingProvider = ref(false);
 const checkingProvider = ref(false);
 const togglingProvider = ref(false);
@@ -95,6 +117,8 @@ const togglingProvider = ref(false);
 const error = ref<string | null>(null);
 
 const providers = ref<Provider[]>([]);
+const gradingBudgetUsage = ref<GradingBudget['usage'] | null>(null);
+const gradingBudgetErrors = ref<Record<string, string[]>>({});
 
 const activeProviderId = ref<string | undefined>(
     undefined,
@@ -119,6 +143,13 @@ const contextForm = reactive<Settings>({
     essay_context: '',
     code_context: '',
     plagiarism_context: '',
+});
+
+const gradingBudgetForm = reactive<GradingBudget['settings']>({
+    grading_daily_request_budget: 25,
+    grading_daily_input_token_budget: 125000,
+    grading_requests_per_minute: 2,
+    grading_auto_continue: true,
 });
 
 /*
@@ -225,6 +256,15 @@ function applySettings(data: Settings) {
     Object.assign(contextForm, data);
 }
 
+function applyGradingBudget(data: GradingBudget) {
+    Object.assign(gradingBudgetForm, data.settings);
+    gradingBudgetUsage.value = data.usage;
+}
+
+function formatBudgetReset(value: string | null | undefined): string {
+    return value ? new Date(value).toLocaleString() : 'Unavailable';
+}
+
 function applyProviders(data: Provider[]) {
     providers.value = data;
 
@@ -299,6 +339,8 @@ async function loadSettings() {
         applyProviders(
             response.data.data.providers,
         );
+
+        applyGradingBudget(response.data.data.grading_budget);
     } catch (err: any) {
         console.error(
             'AI SETTINGS ERROR:',
@@ -570,6 +612,29 @@ async function saveContext() {
         showApiError(err);
     } finally {
         savingContext.value = false;
+    }
+}
+
+async function saveGradingBudget() {
+    savingGradingBudget.value = true;
+    gradingBudgetErrors.value = {};
+
+    try {
+        const response = await axios.put<ApiResponse<GradingBudget>>(
+            '/admin/ai-settings/grading-budget',
+            gradingBudgetForm,
+        );
+
+        showApiToast(response);
+
+        if (response.data.success && response.data.data) {
+            applyGradingBudget(response.data.data);
+        }
+    } catch (err: any) {
+        gradingBudgetErrors.value = err.response?.data?.errors ?? {};
+        showApiError(err);
+    } finally {
+        savingGradingBudget.value = false;
     }
 }
 
@@ -1383,6 +1448,122 @@ onMounted(() => {
                     </div>
                 </form>
             </div>
+            <form
+                class="rounded-lg border bg-card p-4 shadow-sm sm:p-5"
+                @submit.prevent="saveGradingBudget"
+            >
+                <div class="mb-4">
+                    <h2 class="font-semibold">AI Grading Budget</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">
+                        Limits apply across grading models. Workers read updates
+                        at their next budget check, and existing usage is retained.
+                    </p>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <div class="grid content-start gap-1.5">
+                        <Label for="grading_daily_request_budget">Requests per day</Label>
+                        <Input
+                            id="grading_daily_request_budget"
+                            v-model.number="gradingBudgetForm.grading_daily_request_budget"
+                            type="number"
+                            min="1"
+                            max="10000"
+                            step="1"
+                            required
+                            :aria-invalid="Boolean(gradingBudgetErrors.grading_daily_request_budget)"
+                            :aria-describedby="gradingBudgetErrors.grading_daily_request_budget?.[0] ? 'grading_daily_request_budget_hint grading_daily_request_budget_error' : 'grading_daily_request_budget_hint'"
+                        />
+                        <p id="grading_daily_request_budget_hint" class="text-xs text-muted-foreground">Allowed range: 1–10,000.</p>
+                        <p v-if="gradingBudgetErrors.grading_daily_request_budget?.[0]" id="grading_daily_request_budget_error" class="text-sm text-destructive" role="alert">
+                            {{ gradingBudgetErrors.grading_daily_request_budget[0] }}
+                        </p>
+                    </div>
+                    <div class="grid content-start gap-1.5">
+                        <Label for="grading_daily_input_token_budget">Estimated input tokens per day</Label>
+                        <Input
+                            id="grading_daily_input_token_budget"
+                            v-model.number="gradingBudgetForm.grading_daily_input_token_budget"
+                            type="number"
+                            min="1"
+                            max="10000000"
+                            step="1"
+                            required
+                            :aria-invalid="Boolean(gradingBudgetErrors.grading_daily_input_token_budget)"
+                            :aria-describedby="gradingBudgetErrors.grading_daily_input_token_budget?.[0] ? 'grading_daily_input_token_budget_hint grading_daily_input_token_budget_error' : 'grading_daily_input_token_budget_hint'"
+                        />
+                        <p id="grading_daily_input_token_budget_hint" class="text-xs text-muted-foreground">Allowed range: 1–10,000,000 estimated tokens.</p>
+                        <p v-if="gradingBudgetErrors.grading_daily_input_token_budget?.[0]" id="grading_daily_input_token_budget_error" class="text-sm text-destructive" role="alert">
+                            {{ gradingBudgetErrors.grading_daily_input_token_budget[0] }}
+                        </p>
+                    </div>
+                    <div class="grid content-start gap-1.5">
+                        <Label for="grading_requests_per_minute">Requests per minute</Label>
+                        <Input
+                            id="grading_requests_per_minute"
+                            v-model.number="gradingBudgetForm.grading_requests_per_minute"
+                            type="number"
+                            min="1"
+                            max="120"
+                            step="1"
+                            required
+                            :aria-invalid="Boolean(gradingBudgetErrors.grading_requests_per_minute)"
+                            :aria-describedby="gradingBudgetErrors.grading_requests_per_minute?.[0] ? 'grading_requests_per_minute_hint grading_requests_per_minute_error' : 'grading_requests_per_minute_hint'"
+                        />
+                        <p id="grading_requests_per_minute_hint" class="text-xs text-muted-foreground">Allowed range: 1–120.</p>
+                        <p v-if="gradingBudgetErrors.grading_requests_per_minute?.[0]" id="grading_requests_per_minute_error" class="text-sm text-destructive" role="alert">
+                            {{ gradingBudgetErrors.grading_requests_per_minute[0] }}
+                        </p>
+                    </div>
+                </div>
+                <label class="mt-5 flex cursor-pointer items-start gap-3 rounded-md border p-3">
+                    <Checkbox v-model:checked="gradingBudgetForm.grading_auto_continue" />
+                    <span>
+                        <span class="block text-sm font-medium">Automatically continue budget-paused grading</span>
+                        <span class="mt-0.5 block text-xs text-muted-foreground">
+                            Resume only budget-paused work after the applicable window resets.
+                            Failed and cancelled runs are not restarted by this setting.
+                        </span>
+                    </span>
+                </label>
+                <p v-if="gradingBudgetErrors.grading_auto_continue?.[0]" class="mt-2 text-sm text-destructive" role="alert">
+                    {{ gradingBudgetErrors.grading_auto_continue[0] }}
+                </p>
+                <div v-if="gradingBudgetUsage" class="mt-5 rounded-md bg-muted/50 p-3 sm:p-4">
+                    <h3 class="text-sm font-medium">Current Gemini grading usage</h3>
+                    <div class="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                        <div>
+                            <p class="text-muted-foreground">Daily requests</p>
+                            <p class="font-medium">
+                                {{ gradingBudgetUsage.daily_requests_used.toLocaleString() }} used ·
+                                {{ gradingBudgetUsage.daily_requests_remaining.toLocaleString() }} remaining
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-muted-foreground">Daily estimated input tokens</p>
+                            <p class="font-medium">
+                                {{ gradingBudgetUsage.daily_tokens_used.toLocaleString() }} used ·
+                                {{ gradingBudgetUsage.daily_tokens_remaining.toLocaleString() }} remaining
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-muted-foreground">Current-minute requests</p>
+                            <p class="font-medium">
+                                {{ gradingBudgetUsage.minute_requests_used.toLocaleString() }} used ·
+                                {{ gradingBudgetUsage.minute_requests_remaining.toLocaleString() }} remaining
+                            </p>
+                        </div>
+                    </div>
+                    <p class="mt-3 text-xs text-muted-foreground">
+                        Daily reset: {{ formatBudgetReset(gradingBudgetUsage.daily_reset_at) }} ·
+                        Minute reset: {{ formatBudgetReset(gradingBudgetUsage.minute_reset_at) }}
+                    </p>
+                </div>
+                <div class="mt-5 flex border-t pt-4 sm:justify-end">
+                    <Button type="submit" class="w-full sm:w-auto" :disabled="savingGradingBudget">
+                        {{ savingGradingBudget ? 'Saving...' : 'Save Grading Budget' }}
+                    </Button>
+                </div>
+            </form>
         </template>
     </div>
 </template>

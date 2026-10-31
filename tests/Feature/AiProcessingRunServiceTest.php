@@ -107,7 +107,7 @@ test('expired leases are recovered for a later request', function () {
         ->and($service->claim($run, $faculty))->toBeString();
 });
 
-test('retry limits fail the run with a safe error code', function () {
+test('grading run retry history does not trigger a fixed retry limit', function () {
     config()->set('ai_processing.max_retry_attempts', 1);
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiProcessingRunFixture();
     $service = app(AiProcessingRunService::class);
@@ -116,10 +116,10 @@ test('retry limits fail the run with a safe error code', function () {
 
     $run = $service->recordFailure($run, $faculty, $lease, 'provider_rate_limited');
 
-    expect($run->status)->toBe(AiProcessingRun::STATUS_FAILED)
+    expect($run->status)->toBe(AiProcessingRun::STATUS_PENDING)
         ->and($run->error_code)->toBe('provider_rate_limited')
-        ->and($run->active_key)->toBeNull()
-        ->and($service->claim($run, $faculty))->toBeNull();
+        ->and($run->active_key)->not->toBeNull()
+        ->and($service->claim($run, $faculty))->toBeString();
 });
 
 test('processing limits use conservative configurable defaults', function () {

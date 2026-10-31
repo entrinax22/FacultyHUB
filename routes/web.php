@@ -317,6 +317,9 @@ Route::middleware(['auth', 'verified', 'role:admin', 'admin.2fa'])->prefix('admi
     Route::put('ai-settings', [AiSettingsController::class, 'update'])
         ->name('ai-settings.update');
 
+    Route::put('ai-settings/grading-budget', [AiSettingsController::class, 'updateGradingBudget'])
+        ->name('ai-settings.grading-budget.update');
+
     Route::put('ai-settings/providers/{id}', [AiSettingsController::class, 'updateProvider'])
         ->name('ai-settings.providers.update');
 

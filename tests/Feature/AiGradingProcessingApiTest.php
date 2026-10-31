@@ -3,6 +3,7 @@
 use App\Models\AiFeedback;
 use App\Models\AiGradingRunSubmission;
 use App\Models\AiProcessingRun;
+use App\Models\AiSetting;
 use App\Models\Assignment;
 use App\Models\Grade;
 use App\Models\Section;
@@ -455,6 +456,7 @@ test('provider 503 and 429 responses are deferred without false success', functi
 test('budget exhaustion defers without a provider request', function () {
     config()->set('services.gemini.key', 'test-key');
     config()->set('ai_processing.grading_daily_input_token_budget', 1);
+    AiSetting::current()->update(['grading_daily_input_token_budget' => 1]);
     Http::fake();
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), individualGradingPayload($assignment))->assertOk();
@@ -842,15 +844,17 @@ test('a rescheduled interrupted in-flight request becomes unknown without anothe
 test('budget exhaustion pauses the queued batch without contacting the provider', function () {
     config()->set('services.gemini.key', 'test-key');
     config()->set('ai_processing.grading_daily_input_token_budget', 1);
+    AiSetting::current()->update(['grading_daily_input_token_budget' => 1]);
     Http::fake();
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
     runOneAiGradingJob();
     $response = $this->getJson(aiGradingPath($assignment, 'status'))->assertOk()
-        ->assertJsonPath('data.error_code', 'budget_exhausted')->assertJsonPath('data.can_resume', true)
+        ->assertJsonPath('data.error_code', 'budget_exhausted')->assertJsonPath('data.can_resume', false)
         ->assertJsonPath('data.budget_reason', 'budget_daily_tokens')->assertJsonPath('data.monitoring_state', 'paused_budget');
     expect(\Carbon\Carbon::parse($response->json('data.budget_reset_at'))->equalTo(now('America/Los_Angeles')->addDay()->startOfDay()))->toBeTrue();
-    expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
+    expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1)
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->value('available_at'))->toBeGreaterThan(now()->timestamp);
     Http::assertNothingSent();
 });
 
@@ -858,6 +862,7 @@ test('minute budget schedules one fenced continuation at the next window', funct
     $this->travelTo(now()->startOfMinute()->addSeconds(10));
     fakeSuccessfulAiGrade();
     config()->set('ai_processing.grading_requests_per_minute', 1);
+    AiSetting::current()->update(['grading_requests_per_minute' => 1]);
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
     runOneAiGradingJob();
@@ -889,6 +894,10 @@ test('minute budget schedules one fenced continuation at the next window', funct
 test('daily request budget pauses until an authorized resume', function () {
     fakeSuccessfulAiGrade();
     config()->set('ai_processing.grading_daily_request_budget', 1);
+    AiSetting::current()->update([
+        'grading_daily_request_budget' => 1,
+        'grading_auto_continue' => false,
+    ]);
     ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
     $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
     runOneAiGradingJob();
@@ -899,12 +908,87 @@ test('daily request budget pauses until an authorized resume', function () {
     expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
     Http::assertSentCount(1);
     config()->set('ai_processing.grading_daily_request_budget', 2);
+    AiSetting::current()->update(['grading_daily_request_budget' => 2]);
     $this->postJson(aiGradingPath($assignment, 'next'))->assertOk();
     $this->postJson(aiGradingPath($assignment, 'next'))->assertOk();
     expect(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(1);
     runOneAiGradingJob();
     expect(AiProcessingRun::sole()->status)->toBe('completed');
     Http::assertSentCount(2);
+});
+
+test('queued grading reads administrator budget changes dynamically and respects disabled continuation', function () {
+    fakeSuccessfulAiGrade();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
+    $settings = AiSetting::current();
+
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $settings->update([
+        'grading_daily_request_budget' => 1,
+        'grading_auto_continue' => false,
+    ]);
+    runOneAiGradingJob();
+    runOneAiGradingJob();
+
+    $run = AiProcessingRun::sole()->fresh();
+    expect($run->error_code)->toBe('budget_exhausted')
+        ->and($run->queue_job_id)->toBeNull()
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0)
+        ->and(DB::table('ai_processing_budget_windows')->where('category', 'grading')->where('window_type', 'daily')->sum('request_count'))->toBe(1);
+    Http::assertSentCount(1);
+});
+
+test('reducing a grading budget below persisted usage defers further requests', function () {
+    fakeSuccessfulAiGrade();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
+    $settings = AiSetting::current();
+    $settings->update(['grading_daily_request_budget' => 2]);
+
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    runOneAiGradingJob();
+    $settings->update(['grading_daily_request_budget' => 1]);
+    runOneAiGradingJob();
+
+    $run = AiProcessingRun::sole()->fresh();
+    expect($run->error_code)->toBe('budget_exhausted')
+        ->and($run->gradingSubmissions()->where('status', 'pending')->sole()->attempt_count)->toBe(0)
+        ->and(DB::table('ai_processing_budget_windows')->where('category', 'grading')->where('window_type', 'daily')->sum('request_count'))->toBe(1);
+    Http::assertSentCount(1);
+});
+
+test('budget reevaluation never restarts a historical failed run', function () {
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(1);
+    $service = app(AiProcessingRunService::class);
+    $run = $service->startQueuedGradingBatch($faculty, $assignment);
+    $service->prepareGradingRun($faculty, $assignment);
+    DB::table('jobs')->where('id', $run->queue_job_id)->delete();
+    $run->gradingSubmissions()->update([
+        'error_code' => 'budget_daily_requests',
+        'next_eligible_at' => now()->addDay(),
+    ]);
+    $run->update(['status' => 'failed', 'error_code' => 'retry_limit_reached', 'queue_job_id' => null]);
+
+    expect($service->reevaluatePausedGradingRuns())->toBe(0)
+        ->and($run->fresh()->status)->toBe('failed')
+        ->and(DB::table('jobs')->where('queue', 'ai-grading')->count())->toBe(0);
+});
+
+test('coordinator requires explicit confirmation before processing pending unknown outcome evidence', function () {
+    Http::fake();
+    ['faculty' => $faculty, 'assignment' => $assignment] = createAiGradingApiFixture(2);
+    $this->actingAs($faculty)->postJson(aiGradingPath($assignment, 'start'), ['mode' => 'batch'])->assertOk();
+    $run = AiProcessingRun::sole();
+    app(AiProcessingRunService::class)->prepareGradingRun($faculty, $assignment);
+    $run->gradingSubmissions()->firstOrFail()->update(['error_code' => 'outcome_unknown']);
+
+    runOneAiGradingJob();
+
+    expect($run->fresh()->error_code)->toBe('outcome_unknown')
+        ->and($run->fresh()->queue_job_id)->toBeNull();
+    Http::assertNothingSent();
+    $this->postJson(aiGradingPath($assignment, 'next'))->assertUnprocessable();
+    $this->postJson(aiGradingPath($assignment, 'next'), ['confirm_unknown' => true])->assertOk();
+    expect($run->gradingSubmissions()->where('error_code', 'outcome_unknown')->exists())->toBeFalse();
 });
 
 test('global expired-run recovery preserves unknown grading outcomes', function () {
